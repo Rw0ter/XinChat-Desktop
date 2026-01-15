@@ -7,17 +7,20 @@ import { dirname } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const projectRoot = path.resolve(__dirname, '..');
 
 const isWindows = process.platform === 'win32';
 const shell = isWindows ? true : false;
 
 // 启动 Vite 开发服务器
-const vite = spawn(isWindows ? 'cmd' : 'sh',
-    isWindows ? ['/c', 'npm run vite'] : ['-c', 'npm run vite'],
+const vite = spawn(
+    isWindows ? 'cmd' : 'sh',
+    isWindows ? ['/c', 'npm run vite:dev'] : ['-c', 'npm run vite:dev'],
     {
-        cwd: __dirname,
+        cwd: projectRoot,
         stdio: 'inherit',
-        env: { ...process.env, FORCE_COLOR: 'true' }
+        env: { ...process.env, FORCE_COLOR: 'true' },
+        shell
     }
 );
 
@@ -31,12 +34,14 @@ setTimeout(() => {
     const env = { ...process.env };
     env.VITE_DEV_SERVER_URL = 'http://localhost:5173';
 
-    const electron = spawn(isWindows ? 'cmd' : 'sh',
+    const electron = spawn(
+        isWindows ? 'cmd' : 'sh',
         isWindows ? ['/c', 'npx electron . --no-sandbox'] : ['-c', 'npx electron . --no-sandbox'],
         {
-            cwd: __dirname,
+            cwd: projectRoot,
             stdio: 'inherit',
-            env: env
+            env: env,
+            shell
         }
     );
 

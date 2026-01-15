@@ -2,11 +2,12 @@
   "name": "electron-vue-note",
   "version": "1.0.0",
   "description": "Electron + Vite + Vue 笔记应用",
-  "main": "main.js",
+  "main": "src/electron/main.js",
   "scripts": {
-    "dev": "node dev.js",
-    "vite": "vite",
-    "build": "vite build && electron-builder",
+    "dev": "node scripts/dev.js",
+    "vite:dev": "vite --config configs/vite/vite.config.dev.js",
+    "vite:build": "vite build --config configs/vite/vite.config.prod.js",
+    "build": "npm run vite:build && electron-builder",
     "start": "electron . --no-sandbox"
   },
   "author": "",
