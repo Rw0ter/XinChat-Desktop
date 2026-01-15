@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const appRoot = path.resolve(__dirname, '../..');
 
 const DATA_PATH = path.join(app.getPath('userData'), 'note.txt');
 
@@ -49,7 +50,7 @@ function createWindow() {
         win.loadURL(viteDevServer);
     } else {
         console.log('Loading from dist/index.html');
-        win.loadFile(path.join(__dirname, 'dist', 'index.html'));
+        win.loadFile(path.join(appRoot, 'dist', 'index.html'));
     }
 }
 
