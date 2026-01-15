@@ -12,9 +12,9 @@
       100000001,
       100000002
     ],
-    "token": "d86377d3e41d81cb77b04e5542cf0c3fa77d279a18137a98c2f2bc73ed7c005c",
-    "tokenExpiresAt": "2026-07-15T11:29:18.453Z",
-    "lastLoginAt": "2026-01-15T11:29:18.453Z"
+    "token": "3ded2abee9e8e8df1de28b70e8245c7f959848b15a7893fa9dd02afa2af479c6",
+    "tokenExpiresAt": "2026-07-15T11:36:38.534Z",
+    "lastLoginAt": "2026-01-15T11:36:38.534Z"
   },
   {
     "uid": 100000001,
@@ -41,8 +41,8 @@
     "friends": [
       100000000
     ],
-    "token": "bb4dac6e8a18a62f9e4c29023aac1e6763358abc96b784b3b768479d8a0709dd",
-    "tokenExpiresAt": "2026-07-15T11:28:22.257Z",
-    "lastLoginAt": "2026-01-15T11:28:22.257Z"
+    "token": "e970187791bc09b8d11df684090058b27424fd3fe4da5e7d924d8cdb2590faa2",
+    "tokenExpiresAt": "2026-07-15T11:36:54.002Z",
+    "lastLoginAt": "2026-01-15T11:36:54.002Z"
   }
 ]

@@ -168,15 +168,15 @@ router.get('/get', authenticate, async (req, res) => {
     }
 
     const messages = await readMessages();
-    let filtered = messages.filter(
-      (item) => item.targetType === targetType && item.targetUid === targetUid
-    );
+    let filtered = messages.filter((item) => item.targetType === targetType);
     if (targetType === 'private') {
       filtered = filtered.filter(
         (item) =>
           (item.senderUid === user.uid && item.targetUid === targetUid) ||
           (item.senderUid === targetUid && item.targetUid === user.uid)
       );
+    } else {
+      filtered = filtered.filter((item) => item.targetUid === targetUid);
     }
     if (type) {
       filtered = filtered.filter((item) => item.type === type);

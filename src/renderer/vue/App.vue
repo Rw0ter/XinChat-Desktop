@@ -80,7 +80,7 @@
                     </div>
                 </div>
 
-                <div class="chat-body">
+                <div class="chat-body" ref="chatBodyRef">
                     <div v-if="loading" class="loading">加载中...</div>
                     <div v-else-if="!messages.length" class="empty-chat">
                         还没有聊天记录，打个招呼吧。
@@ -118,7 +118,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, nextTick } from 'vue';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
 
@@ -126,10 +126,17 @@ const auth = ref({ token: '', uid: null, username: '' });
 const friends = ref([]);
 const activeFriend = ref(null);
 const messages = ref([]);
+const chatBodyRef = ref(null);
 const draft = ref('');
 const loading = ref(false);
 const searchText = ref('');
 const statusText = ref('在线');
+const pollTimers = {
+    friends: null,
+    messages: null
+};
+const lastFriendSignature = ref('');
+const lastMessageSignature = ref('');
 
 const handleMin = () => window.electronAPI?.windowMin?.();
 const handleMax = () => window.electronAPI?.windowMax?.();
@@ -199,7 +206,17 @@ const loadAuth = async () => {
     }
 };
 
-const loadFriends = async () => {
+const buildFriendSignature = (items) => {
+    return items.map((item) => `${item.uid}-${item.username}`).join('|');
+};
+
+const buildMessageSignature = (items) => {
+    if (!items.length) return '';
+    const last = items[items.length - 1];
+    return `${items.length}-${last.id}-${last.createdAt}`;
+};
+
+const loadFriends = async ({ silent } = {}) => {
     if (!auth.value.token) return;
     try {
         const res = await fetch(`${API_BASE}/api/friends/list`, {
@@ -209,32 +226,59 @@ const loadFriends = async () => {
         });
         const data = await res.json();
         if (res.ok && data?.success) {
-            friends.value = data.friends || [];
+            const next = data.friends || [];
+            const signature = buildFriendSignature(next);
+            if (signature !== lastFriendSignature.value) {
+                friends.value = next;
+                lastFriendSignature.value = signature;
+            }
             if (!activeFriend.value && friends.value.length) {
                 selectFriend(friends.value[0]);
             }
         }
     } catch (err) {
-        statusText.value = '好友加载失败';
+        if (!silent) {
+            statusText.value = '好友加载失败';
+        }
     }
 };
 
-const loadMessages = async (targetUid) => {
+const loadMessages = async (targetUid, { silent } = {}) => {
     if (!auth.value.token || !targetUid) return;
-    loading.value = true;
+    if (!silent) {
+        loading.value = true;
+    }
     try {
         const url = `${API_BASE}/api/chat/get?targetType=private&targetUid=${targetUid}`;
         const res = await fetch(url, { headers: authHeader() });
         const data = await res.json();
         if (res.ok && data?.success) {
-            messages.value = data.data || [];
+            const next = data.data || [];
+            const signature = buildMessageSignature(next);
+            if (signature !== lastMessageSignature.value) {
+                const shouldStick = isAtBottom();
+                messages.value = next;
+                lastMessageSignature.value = signature;
+                if (shouldStick) {
+                    await nextTick();
+                    scrollToBottom();
+                }
+            }
         } else {
-            messages.value = [];
+            if (!silent) {
+                messages.value = [];
+                lastMessageSignature.value = '';
+            }
         }
     } catch (err) {
-        messages.value = [];
+        if (!silent) {
+            messages.value = [];
+            lastMessageSignature.value = '';
+        }
     } finally {
-        loading.value = false;
+        if (!silent) {
+            loading.value = false;
+        }
     }
 };
 
@@ -266,15 +310,42 @@ const sendMessage = async () => {
         if (res.ok && data?.success) {
             messages.value = [...messages.value, data.data];
             draft.value = '';
+            await nextTick();
+            scrollToBottom();
         }
     } catch (err) {
         statusText.value = '发送失败';
     }
 };
 
+const isAtBottom = () => {
+    const el = chatBodyRef.value;
+    if (!el) return true;
+    return el.scrollTop + el.clientHeight >= el.scrollHeight - 8;
+};
+
+const scrollToBottom = () => {
+    const el = chatBodyRef.value;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+};
+
 onMounted(async () => {
     await loadAuth();
     await loadFriends();
+    pollTimers.friends = setInterval(() => {
+        loadFriends({ silent: true });
+    }, 5000);
+    pollTimers.messages = setInterval(() => {
+        if (activeFriend.value?.uid) {
+            loadMessages(activeFriend.value.uid, { silent: true });
+        }
+    }, 3000);
+});
+
+onBeforeUnmount(() => {
+    if (pollTimers.friends) clearInterval(pollTimers.friends);
+    if (pollTimers.messages) clearInterval(pollTimers.messages);
 });
 </script>
 
@@ -501,7 +572,7 @@ onMounted(async () => {
     transition: transform 0.2s var(--ease), border 0.2s;
     cursor: pointer;
     width: 100%;
-    height: 12vh;
+    height: 70px;
 }
 
 .list-item:hover {
@@ -559,8 +630,9 @@ onMounted(async () => {
     background: var(--panel);
     border-radius: var(--radius-lg);
     border: 1px solid var(--line);
-    display: grid;
-    grid-template-rows: auto 1fr auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     box-shadow: var(--shadow);
 }
 
@@ -604,6 +676,8 @@ onMounted(async () => {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    flex: 1;
+    min-height: 0;
     background: linear-gradient(180deg, rgba(243, 248, 255, 0.8), rgba(255, 255, 255, 0.95));
 }
 
@@ -614,7 +688,8 @@ onMounted(async () => {
 }
 
 .bubble {
-    max-width: 70%;
+    max-width: 50%;
+    width: fit-content;
     padding: 12px 14px;
     border-radius: 16px;
     background: #f3f7ff;
@@ -638,6 +713,8 @@ onMounted(async () => {
 .bubble-text {
     font-size: 14px;
     line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .serach_input_box{
@@ -660,6 +737,7 @@ onMounted(async () => {
     display: grid;
     grid-template-columns: 1fr 120px;
     gap: 12px;
+    flex: 0 0 auto;
 }
 
 .composer textarea {
