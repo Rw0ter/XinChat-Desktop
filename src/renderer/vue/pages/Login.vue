@@ -25,13 +25,13 @@
             <h2 class="top_title">信聊</h2>
 
             <div class="form">
-                <input v-model.trim="form.username" type="text" placeholder="用户名" />
-                <input v-model.trim="form.password" type="password" placeholder="密码" />
+                <input v-model.trim="form.username" style="margin-bottom: 9px;" type="text" placeholder="用户名/信聊号/邮箱" />
+                <input v-model.trim="form.password" style="margin-top: 0px; margin-bottom: 9px;" type="password" placeholder="输入信聊密码" />
                 <input
                     v-if="mode === 'register'"
                     v-model.trim="form.confirmPassword"
                     type="password"
-                    placeholder="确认密码"
+                    placeholder="确认密码" tyle="margin-top: 0px;"
                 />
             </div>
 
@@ -143,6 +143,17 @@ const handleSubmit = async () => {
         const result = await response.json();
 
         if (response.ok && result?.success) {
+            if (result?.token) {
+                await window.electronAPI?.setAuthToken?.({
+                    token: result.token,
+                    tokenExpiresAt: result.tokenExpiresAt,
+                    uid: result.uid,
+                    username: form.username
+                });
+                try {
+                    localStorage.setItem('vp_username', form.username);
+                } catch {}
+            }
             await window.electronAPI?.loginSuccess?.();
             return;
         }
@@ -314,23 +325,29 @@ h2 {
 }
 
 input::placeholder{
-    color: white;
+    color: rgb(168, 168, 168);
+    text-align: center;
+    font-size: 16px;
 }
 
 
 input {
     outline: none;
     width: 240px;
-    height: 30px;
+    height: 32px;
     border-radius: 4px;
     border: 1px solid #203044;
-    background: #ffffff2d;
+    background: #ffffff1a;
     color: #ffffff;
     padding: 5px;
 border-radius: 8px;
-margin-left: 35px;
+margin-left: 20px;
 margin-bottom: 20px;
-
+text-align: center;
+font-size: 20px;
+caret-color: transparent; /* 隐藏光标 */
+padding-left: 20px;
+padding-right: 20px;
 }
 
 .submit-btn {

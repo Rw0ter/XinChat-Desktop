@@ -33,6 +33,7 @@ vite.on('error', (err) => {
 setTimeout(() => {
     const env = { ...process.env };
     env.VITE_DEV_SERVER_URL = 'http://localhost:5173';
+    delete env.ELECTRON_RUN_AS_NODE;
 
     const electron = spawn(
         isWindows ? 'cmd' : 'sh',

@@ -19,7 +19,8 @@ export default defineConfig({
         rollupOptions: {
             input: {
                 main: path.resolve(rendererRoot, 'index.html'),
-                login: path.resolve(rendererRoot, 'login.html')
+                login: path.resolve(rendererRoot, 'login.html'),
+                found_friend: path.resolve(rendererRoot, 'found_friend.html')
             }
         }
     }

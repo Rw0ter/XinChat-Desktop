@@ -8,6 +8,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const USERS_PATH = path.join(DATA_DIR, 'users.json');
+const UID_START = 100000000;
+const TOKEN_TTL_DAYS = 181;
 
 const router = express.Router();
 
@@ -29,12 +31,69 @@ const ensureStorage = async () => {
 const readUsers = async () => {
   await ensureStorage();
   const raw = await fs.readFile(USERS_PATH, 'utf-8');
-  return JSON.parse(raw);
+  const users = JSON.parse(raw);
+  await ensureUserUids(users);
+  await ensureUserDefaults(users);
+  return users;
 };
 
 const writeUsers = async (users) => {
   await ensureStorage();
   await fs.writeFile(USERS_PATH, JSON.stringify(users, null, 2), 'utf-8');
+};
+
+const ensureUserUids = async (users) => {
+  let maxUid = UID_START - 1;
+  users.forEach((user) => {
+    if (Number.isInteger(user.uid)) {
+      maxUid = Math.max(maxUid, user.uid);
+    }
+  });
+
+  let nextUid = Math.max(maxUid + 1, UID_START);
+  let updated = false;
+  users.forEach((user) => {
+    if (!Number.isInteger(user.uid)) {
+      user.uid = nextUid++;
+      updated = true;
+    }
+  });
+
+  if (updated) {
+    await writeUsers(users);
+  }
+};
+
+const ensureUserDefaults = async (users) => {
+  let updated = false;
+  users.forEach((user) => {
+    if (!Array.isArray(user.friends)) {
+      user.friends = [];
+      updated = true;
+    }
+  });
+
+  if (updated) {
+    await writeUsers(users);
+  }
+};
+
+const getNextUid = (users) => {
+  let maxUid = UID_START - 1;
+  users.forEach((user) => {
+    if (Number.isInteger(user.uid)) {
+      maxUid = Math.max(maxUid, user.uid);
+    }
+  });
+  return Math.max(maxUid + 1, UID_START);
+};
+
+const issueToken = () => {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(
+    Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+  return { token, expiresAt };
 };
 
 const hashPassword = (password, salt = crypto.randomBytes(16)) => {
@@ -122,7 +181,14 @@ router.post('/register', async (req, res) => {
     }
 
     const hashed = hashPassword(password);
-    users.push({ username: normalized, ...hashed, createdAt: new Date().toISOString() });
+    const uid = getNextUid(users);
+    users.push({
+      uid,
+      username: normalized,
+      ...hashed,
+      createdAt: new Date().toISOString(),
+      friends: [],
+    });
     await writeUsers(users);
     res.json({ success: true, message: '注册成功，请登录。' });
   } catch (error) {
@@ -176,20 +242,37 @@ router.post('/login', async (req, res) => {
     if (isLegacy) {
       const hashed = hashPassword(password);
       users[userIndex] = {
+        uid: user.uid,
         username: normalized,
         ...hashed,
         createdAt: user.createdAt || new Date().toISOString(),
+        friends: Array.isArray(user.friends) ? user.friends : [],
         migratedAt: new Date().toISOString(),
       };
       await writeUsers(users);
     }
 
-    res.json({ success: true, message: '登录成功。' });
+    const { token, expiresAt } = issueToken();
+    users[userIndex] = {
+      ...users[userIndex],
+      token,
+      tokenExpiresAt: expiresAt,
+      lastLoginAt: new Date().toISOString(),
+    };
+    await writeUsers(users);
+
+    res.json({
+      success: true,
+      message: 'Login success.',
+      token,
+      tokenExpiresAt: expiresAt,
+      uid: users[userIndex].uid,
+    });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ success: false, message: '登录失败，请稍后重试。' });
   }
 });
 
-export { ensureStorage };
+export { ensureStorage, readUsers, writeUsers };
 export default router;

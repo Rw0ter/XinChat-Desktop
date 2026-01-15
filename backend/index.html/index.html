@@ -5,55 +5,362 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>后端管理系统</title>
     <style>
+      :root {
+        --ink: #1f2a44;
+        --muted: #53607a;
+        --paper: #f4f0ea;
+        --card: #ffffff;
+        --accent: #d1495b;
+        --accent-2: #1b998b;
+        --line: rgba(31, 42, 68, 0.12);
+      }
+      * {
+        box-sizing: border-box;
+      }
       body {
-        font-family: "Helvetica Neue", Arial, sans-serif;
-        background: #f5f7fb;
-        color: #1f2a44;
+        font-family: "DM Sans", "Segoe UI", sans-serif;
+        background: radial-gradient(circle at top left, #fff2d6, #f4f0ea);
+        color: var(--ink);
         margin: 0;
         padding: 32px;
       }
-      .card {
-        max-width: 720px;
+      .layout {
+        max-width: 1200px;
         margin: 0 auto;
-        background: #ffffff;
-        border-radius: 16px;
-        padding: 32px;
-        box-shadow: 0 12px 24px rgba(31, 42, 68, 0.08);
+        display: grid;
+        gap: 24px;
+      }
+      header {
+        background: var(--card);
+        border-radius: 20px;
+        padding: 28px 32px;
+        box-shadow: 0 14px 30px rgba(31, 42, 68, 0.08);
+        border: 1px solid var(--line);
       }
       h1 {
-        font-size: 28px;
-        margin-bottom: 12px;
+        font-size: 30px;
+        margin: 0 0 8px;
       }
       p {
         line-height: 1.6;
         margin: 0 0 12px;
+        color: var(--muted);
       }
       .tag {
         display: inline-block;
-        padding: 4px 12px;
+        padding: 6px 14px;
         border-radius: 999px;
-        background: #e8eefc;
-        color: #2b5bdb;
+        background: #f8d7dc;
+        color: var(--accent);
         font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
         margin-right: 8px;
       }
+      .grid {
+        display: grid;
+        gap: 24px;
+        grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+      }
+      .card {
+        background: var(--card);
+        border-radius: 18px;
+        padding: 22px 24px;
+        box-shadow: 0 12px 24px rgba(31, 42, 68, 0.06);
+        border: 1px solid var(--line);
+      }
+      .card h2 {
+        font-size: 18px;
+        margin: 0 0 12px;
+      }
       ul {
-        margin: 16px 0 0;
-        padding-left: 18px;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 10px;
+      }
+      li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-radius: 12px;
+        background: #f7f7fb;
+        border: 1px solid var(--line);
+        font-size: 13px;
+        cursor: pointer;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      }
+      li:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 16px rgba(31, 42, 68, 0.08);
+      }
+      li.active {
+        border-color: var(--accent);
+        background: #fff0f2;
+      }
+      code {
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 12px;
+        color: #0f172a;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #e6f4f1;
+        color: var(--accent-2);
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .tester {
+        display: grid;
+        gap: 14px;
+      }
+      .template-row {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 12px;
+      }
+      label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      input,
+      select,
+      textarea,
+      button {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+        font-size: 13px;
+        font-family: "DM Sans", "Segoe UI", sans-serif;
+      }
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+        font-family: "JetBrains Mono", monospace;
+      }
+      button {
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+        border: none;
+      }
+      button:hover {
+        opacity: 0.9;
+      }
+      .response {
+        background: #0f172a;
+        color: #f8fafc;
+        border-radius: 12px;
+        padding: 12px;
+        font-size: 12px;
+        min-height: 120px;
+        white-space: pre-wrap;
+        font-family: "JetBrains Mono", monospace;
+      }
+      .note {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .split {
+        display: grid;
+        gap: 18px;
+      }
+      .split > div {
+        display: grid;
+        gap: 12px;
+      }
+      @media (max-width: 920px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
   <body>
-    <div class="card">
-      <span class="tag">Backend Admin</span>
-      <span class="tag">/admin</span>
-      <h1>后端管理系统</h1>
-      <p>这里是后端管理系统的入口页，用于展示后端服务状态与管理入口。</p>
-      <ul>
-        <li>统一的 API 路由：<strong>/api</strong></li>
-        <li>静态资源目录：<strong>/resource</strong></li>
-        <li>账号数据目录：<strong>/data</strong></li>
-      </ul>
+    <div class="layout">
+      <header>
+        <span class="tag">Backend Admin</span>
+        <span class="tag">/admin</span>
+        <h1>后端管理系统</h1>
+        <p>列出可用路径，并在本页直接发起请求进行图形化测试。</p>
+      </header>
+
+      <section class="grid">
+        <div class="card">
+          <h2>可用路径</h2>
+          <ul id="routeList"></ul>
+        </div>
+
+        <div class="card">
+          <h2 id="panelTitle">接口测试</h2>
+          <div class="split">
+            <div>
+              <div>
+                <label for="template">常用模板</label>
+                <select id="template"></select>
+              </div>
+              <div class="tester">
+                <div>
+                  <label for="method">方法</label>
+                  <input id="method" readonly />
+                </div>
+                <div>
+                  <label for="path">路径</label>
+                  <input id="path" />
+                </div>
+                <div>
+                  <label for="payload">JSON Body</label>
+                  <textarea id="payload"></textarea>
+                </div>
+                <button id="sendBtn">发送请求</button>
+                <div>
+                  <label>响应</label>
+                  <div class="response" id="response">等待请求...</div>
+                </div>
+                <div class="note" id="hint"></div>
+              </div>
+            </div>
+            <div>
+              <h2>右侧说明</h2>
+              <div class="note" id="endpointNote">
+                请选择左侧路径以查看接口说明与请求模板。
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
+
+    <script>
+      const routeListEl = document.getElementById('routeList');
+      const templateEl = document.getElementById('template');
+      const methodEl = document.getElementById('method');
+      const pathEl = document.getElementById('path');
+      const payloadEl = document.getElementById('payload');
+      const responseEl = document.getElementById('response');
+      const sendBtn = document.getElementById('sendBtn');
+      const panelTitleEl = document.getElementById('panelTitle');
+      const endpointNoteEl = document.getElementById('endpointNote');
+      const hintEl = document.getElementById('hint');
+
+      let routes = [];
+
+      const pretty = (value) => {
+        if (typeof value === 'string') return value;
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch {
+          return String(value);
+        }
+      };
+
+      const renderRouteList = () => {
+        routeListEl.innerHTML = '';
+        routes.forEach((route, index) => {
+          const li = document.createElement('li');
+          li.dataset.route = route.id;
+          li.innerHTML = `<span class="pill">${route.method}</span><code>${route.path}</code>`;
+          li.addEventListener('click', () => selectRoute(route.id));
+          if (index === 0) {
+            li.classList.add('active');
+          }
+          routeListEl.appendChild(li);
+        });
+      };
+
+      const selectRoute = (id) => {
+        const route = routes.find((item) => item.id === id) || routes[0];
+        document.querySelectorAll('#routeList li').forEach((item) => {
+          item.classList.toggle('active', item.dataset.route === route.id);
+        });
+        panelTitleEl.textContent = `接口测试：${route.label}`;
+        endpointNoteEl.textContent = route.note;
+        methodEl.value = route.method;
+        pathEl.value = route.path === '/resource/*' ? '/resource/' : route.path;
+        hintEl.textContent = '';
+        renderTemplates(route);
+      };
+
+      const renderTemplates = (route) => {
+        templateEl.innerHTML = '';
+        route.templates.forEach((template, index) => {
+          const option = document.createElement('option');
+          option.value = String(index);
+          option.textContent = template.name;
+          templateEl.appendChild(option);
+        });
+        applyTemplate(route, 0);
+        templateEl.onchange = () => {
+          applyTemplate(route, Number(templateEl.value));
+        };
+      };
+
+      const applyTemplate = (route, index) => {
+        const template = route.templates[index];
+        if (!template) return;
+        methodEl.value = route.method;
+        pathEl.value = template.path || (route.path === '/resource/*' ? '/resource/' : route.path);
+        payloadEl.value = template.body ? pretty(template.body) : '';
+        hintEl.textContent = template.hint || '';
+      };
+
+      sendBtn.addEventListener('click', async () => {
+        const method = methodEl.value;
+        const path = pathEl.value.trim();
+        if (!path.startsWith('/')) {
+          responseEl.textContent = '路径需要以 / 开头。';
+          return;
+        }
+
+        let body = null;
+        if (payloadEl.value.trim()) {
+          try {
+            body = JSON.parse(payloadEl.value);
+          } catch (err) {
+            responseEl.textContent = `JSON 解析失败: ${err.message}`;
+            return;
+          }
+        }
+
+        responseEl.textContent = '请求中...';
+        try {
+          const res = await fetch(path, {
+            method,
+            headers: body ? { 'Content-Type': 'application/json' } : undefined,
+            body: body ? JSON.stringify(body) : undefined,
+          });
+          const text = await res.text();
+          responseEl.textContent = `[${res.status}] ${text}`;
+        } catch (err) {
+          responseEl.textContent = `请求失败: ${err.message}`;
+        }
+      });
+
+      const fetchRoutes = async () => {
+        try {
+          const res = await fetch('/api/routes');
+          const json = await res.json();
+          if (!json || !json.success || !Array.isArray(json.data)) {
+            throw new Error('Invalid route data.');
+          }
+          routes = json.data;
+          renderRouteList();
+          selectRoute(routes[0]?.id);
+        } catch (err) {
+          responseEl.textContent = `接口列表拉取失败: ${err.message}`;
+        }
+      };
+
+      fetchRoutes();
+    </script>
   </body>
 </html>

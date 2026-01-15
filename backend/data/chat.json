@@ -1,0 +1,54 @@
+[
+  {
+    "id": "4e6a8734-9dee-4faf-a8df-22b212ef3b1b",
+    "type": "text",
+    "data": {
+      "content": "Hello"
+    },
+    "createdAt": "2026-01-15T07:56:57.397Z"
+  },
+  {
+    "id": "886a291e-d65d-4de4-963b-075a83a94311",
+    "type": "text",
+    "senderUid": 100000000,
+    "targetUid": 100000001,
+    "targetType": "private",
+    "data": {
+      "content": "1"
+    },
+    "createdAt": "2026-01-15T11:10:26.276Z"
+  },
+  {
+    "id": "d7039a4d-d3d2-4d48-a13d-54c7eb8e7484",
+    "type": "text",
+    "senderUid": 100000000,
+    "targetUid": 100000001,
+    "targetType": "private",
+    "data": {
+      "content": "你好！"
+    },
+    "createdAt": "2026-01-15T11:10:33.682Z"
+  },
+  {
+    "id": "e0662fc5-d262-476e-a8db-b0b6da52276c",
+    "type": "text",
+    "senderUid": 100000002,
+    "targetUid": 100000000,
+    "targetType": "private",
+    "data": {
+      "content": "66"
+    },
+    "createdAt": "2026-01-15T11:29:25.734Z"
+  },
+  {
+    "id": "0a5f7245-6b7f-4d02-8e95-c7e9d4421ab4",
+    "type": "text",
+    "senderUid": 100000000,
+    "targetUid": 100000002,
+    "targetType": "private",
+    "data": {
+      "content": "11"
+    },
+    "createdAt": "2026-01-15T11:29:31.339Z"
+  }
+]

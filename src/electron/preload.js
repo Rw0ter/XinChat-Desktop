@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     loadTabFile: (tabId) =>
         ipcRenderer.invoke('load-tab-file', tabId),
     loginSuccess: () => ipcRenderer.send('login-success'),
+    setAuthToken: (payload) => ipcRenderer.invoke('set-auth-token', payload),
+    getAuthToken: () => ipcRenderer.invoke('get-auth-token'),
+    openFoundFriend: () => ipcRenderer.send('open-found-friend'),
     windowClose: () => ipcRenderer.send('window-close'),
     windowMin: () => ipcRenderer.send('window-min'),
     windowMax: () => ipcRenderer.send('window-max')

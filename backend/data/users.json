@@ -1,0 +1,48 @@
+[
+  {
+    "uid": 100000000,
+    "username": "rw0ter",
+    "passwordHash": "cc1b8cba1eb2ab0ed3c9e45a50a8ab0b406a7cab688d17b03c5343c5d76d5374c812754f88999f0095a8a937d9a32cce532b8e63700351cf3038cc7537f179c7",
+    "salt": "5e2c19e3fe13605d879972fd86595a05",
+    "iterations": 120000,
+    "keylen": 64,
+    "digest": "sha512",
+    "createdAt": "2026-01-15T06:45:19.412Z",
+    "friends": [
+      100000001,
+      100000002
+    ],
+    "token": "d86377d3e41d81cb77b04e5542cf0c3fa77d279a18137a98c2f2bc73ed7c005c",
+    "tokenExpiresAt": "2026-07-15T11:29:18.453Z",
+    "lastLoginAt": "2026-01-15T11:29:18.453Z"
+  },
+  {
+    "uid": 100000001,
+    "username": "demo_user",
+    "passwordHash": "dd9cd0c7f481d89a8b5afc1bb9927540a36feea74aba5c9e160a711ff07d2eec44e4068fc1b7d7785ba37a442d75b50c12589ed00741ceb8005e2d01f24253bd",
+    "salt": "b65c4ae6d238fa041f52b13e58fcced9",
+    "iterations": 120000,
+    "keylen": 64,
+    "digest": "sha512",
+    "createdAt": "2026-01-15T07:56:54.217Z",
+    "friends": [
+      100000000
+    ]
+  },
+  {
+    "uid": 100000002,
+    "username": "xkitme",
+    "passwordHash": "4393bfcc9ca41d08ecb6336ee69469b3ed14ba7f489402ca7cc78bf2dc9e673a5e84f97e2d55b08a0d4cfda636d10c57f8159b96612316d7f99cc87e0b9579cb",
+    "salt": "628a498600d3890beb82bd146ae3cf46",
+    "iterations": 120000,
+    "keylen": 64,
+    "digest": "sha512",
+    "createdAt": "2026-01-15T11:27:32.817Z",
+    "friends": [
+      100000000
+    ],
+    "token": "bb4dac6e8a18a62f9e4c29023aac1e6763358abc96b784b3b768479d8a0709dd",
+    "tokenExpiresAt": "2026-07-15T11:28:22.257Z",
+    "lastLoginAt": "2026-01-15T11:28:22.257Z"
+  }
+]
