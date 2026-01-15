@@ -33,3 +33,4 @@ This is an Electron + Vue project scaffolded locally.
 ## License
 
 MIT — see `LICENSE` file.
+1
