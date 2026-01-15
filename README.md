@@ -10,7 +10,8 @@ This is an Electron + Vue project scaffolded locally.
 
 - `src/electron/`: Electron 主进程与预加载脚本（生产/测试共用）
 - `src/renderer/`: Vite 渲染层根目录
-  - `index.html`: Vite 入口
+  - `index.html`: 主界面入口
+  - `login.html`: 登录注册入口
   - `vue/`: Vue 应用源码
 - `configs/vite/`: Vite 配置（本地测试/上线分离）
 - `scripts/`: 本地开发启动脚本
