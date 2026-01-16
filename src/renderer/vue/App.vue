@@ -73,44 +73,166 @@
         </header>
 
         <main class="layout">
-            <aside class="sidebar">
-                <div class="search">
-                    <div class="serach_input_box">
-                        <input v-model="searchText"  class="serach_input" type="text" placeholder="搜索联系人或群组" />
-                        <div class="add_friend_icon" @click="openFoundFriend">+</div>
-                    </div>
-                    
-                    <div class="search-hint">好友 {{ filteredFriends.length }}</div>
-                </div>
-                <div class="list">
-                    <div class="section-title">私聊列表</div>
+            <aside class="icon-rail">
+                <div class="rail-section">
                     <button
-                        v-for="friend in filteredFriends"
-                        :key="friend.uid"
-                        class="list-item"
-                        :class="{ active: activeFriend?.uid === friend.uid }"
-                        @click="selectFriend(friend)"
+                        class="rail-btn"
+                        :class="{ active: activeView === 'chat' }"
+                        title="消息"
+                        @click="activeView = 'chat'"
                     >
-                        <div class="avatar">{{ friend.username?.slice(0, 2).toUpperCase() }}</div>
-                        <div class="list-meta">
-                            <div class="list-name">{{ friend.username }}</div>
-                            <div class="list-sub">UID {{ friend.uid }}</div>
-                        </div>
+                        <span class="rail-icon">&#xE8BD;</span>
+                        <span class="rail-badge">99+</span>
                     </button>
-                    <div v-if="!filteredFriends.length" class="empty-state">
-                        暂无好友，请先添加好友。
+                    <button
+                        class="rail-btn"
+                        :class="{ active: activeView === 'contacts' }"
+                        title="联系人"
+                        @click="openContacts"
+                    >
+                        <span class="rail-icon">&#xE77B;</span>
+                        <span class="rail-dot"></span>
+                    </button>
+                    <button class="rail-btn" title="收藏">
+                        <span class="rail-icon">&#xE734;</span>
+                    </button>
+                    <button class="rail-btn" title="探索">
+                        <span class="rail-icon">&#xE80F;</span>
+                        <span class="rail-dot"></span>
+                    </button>
+                    <button class="rail-btn" title="笔记">
+                        <span class="rail-icon">&#xE8A5;</span>
+                    </button>
+                </div>
+                <div class="rail-section rail-bottom">
+                    <button class="rail-btn" title="邮箱">
+                        <span class="rail-icon">&#xE715;</span>
+                        <span class="rail-dot"></span>
+                    </button>
+                    <button class="rail-btn" title="设置">
+                        <span class="rail-icon">&#xE713;</span>
+                    </button>
+                    <button class="rail-btn" title="菜单">
+                        <span class="rail-icon">&#xE700;</span>
+                    </button>
+                </div>
+            </aside>
+            <aside class="sidebar">
+                <div v-if="activeView === 'chat'" class="chat-sidebar">
+                    <div class="search">
+                        <div class="serach_input_box">
+                            <input v-model="searchText" class="serach_input" type="text" placeholder="搜索联系人或群组" />
+                            <div class="add_friend_icon" @click="openFoundFriend">+</div>
+                        </div>
+
+                        <div class="search-hint">好友 {{ filteredFriends.length }}</div>
+                    </div>
+                    <div class="list">
+                        <div class="section-title">私聊列表</div>
+                        <button
+                            v-for="friend in filteredFriends"
+                            :key="friend.uid"
+                            class="list-item"
+                            :class="{ active: activeFriend?.uid === friend.uid }"
+                            @click="selectFriend(friend)"
+                        >
+                            <div class="avatar">{{ friend.username?.slice(0, 2).toUpperCase() }}</div>
+                            <div class="list-meta">
+                                <div class="list-name">{{ friend.username }}</div>
+                                <div class="list-sub">UID {{ friend.uid }}</div>
+                            </div>
+                        </button>
+                        <div v-if="!filteredFriends.length" class="empty-state">
+                            暂无好友，请先添加好友。
+                        </div>
+                    </div>
+                </div>
+
+                <div v-else class="contacts-sidebar">
+                    <div class="contacts-search">
+                        <div class="contacts-search-box">
+                            <span class="search-icon">&#128269;</span>
+                            <input type="text" placeholder="搜索" />
+                        </div>
+                        <button class="friend-manager-btn" @click="openFoundFriend">
+                            <span class="manager-icon">&#xE77B;</span>
+                            好友管理器
+                        </button>
+                    </div>
+                    <div class="contacts-section">
+                        <button
+                            class="contacts-item"
+                            :class="{ active: contactsNoticeType === 'friend' }"
+                            @click="contactsNoticeType = 'friend'"
+                        >
+                            <span>好友通知</span>
+                            <span class="chev">&#xE76C;</span>
+                        </button>
+                        <button
+                            class="contacts-item"
+                            :class="{ active: contactsNoticeType === 'group' }"
+                            @click="contactsNoticeType = 'group'"
+                        >
+                            <span>群通知</span>
+                            <span class="badge">2</span>
+                            <span class="chev">&#xE76C;</span>
+                        </button>
+                    </div>
+                    <div class="contacts-tabs">
+                        <button class="contacts-tab active">好友</button>
+                        <button class="contacts-tab">群聊</button>
+                    </div>
+                    <div class="contacts-list">
+                        <button class="contacts-row">
+                            <span>我的设备</span>
+                            <span class="count">1</span>
+                        </button>
+                        <button class="contacts-row">
+                            <span>机器人</span>
+                            <span class="count">1</span>
+                        </button>
+                        <button class="contacts-row">
+                            <span>特别关心</span>
+                            <span class="count">1/4</span>
+                        </button>
+                        <button class="contacts-row">
+                            <span>我的好友</span>
+                            <span class="count">{{ filteredFriends.length }}/{{ filteredFriends.length }}</span>
+                        </button>
+                        <button class="contacts-row">
+                            <span>朋友</span>
+                            <span class="count">0/0</span>
+                        </button>
+                        <button class="contacts-row">
+                            <span>家人</span>
+                            <span class="count">0/0</span>
+                        </button>
+                        <button class="contacts-row">
+                            <span>同学</span>
+                            <span class="count">0/1</span>
+                        </button>
+                        <button class="contacts-row">
+                            <span>么么哒</span>
+                            <span class="count">0/0</span>
+                        </button>
                     </div>
                 </div>
             </aside>
 
             <section class="chat">
-                <div class="chat-header">
-                    <div>
-                        <div class="chat-title">
-                            {{ activeFriend?.username || '选择一个联系人' }}
+                <div v-if="activeView === 'chat'" class="chat-panel">
+                    <div class="chat-header">
+                        <div>
+                            <div class="chat-title">
+                                {{ activeFriend?.username || '选择一个联系人' }}
+                            </div>
+                            <div class="chat-sub">
+                                {{ activeFriend ? `私聊 · UID ${activeFriend.uid}` : '等待选择聊天对象' }}
+                            </div>
                         </div>
-                        <div class="chat-sub">
-                            {{ activeFriend ? `私聊 · UID ${activeFriend.uid}` : '等待选择聊天对象' }}
+                        <div class="chat-actions">
+                            <span class="chip">private</span>
+                            <span class="chip">online</span>
                         </div>
                     </div>
                     <div class="chat-actions">
@@ -121,37 +243,141 @@
                     </div>
                 </div>
 
-                <div class="chat-body" ref="chatBodyRef">
-                    <div v-if="loading" class="loading">加载中...</div>
-                    <div v-else-if="!messages.length" class="empty-chat">
-                        还没有聊天记录，打个招呼吧。
-                    </div>
-                    <div v-else class="bubble-list">
-                        <div
-                            v-for="msg in messages"
-                            :key="msg.id"
-                            class="bubble"
-                            :class="{ self: msg.senderUid === auth.uid }"
-                        >
-                            <div class="bubble-name">
-                                {{ msg.senderUid === auth.uid ? displayName : activeFriend?.username }}
+                    <div class="chat-body" ref="chatBodyRef">
+                        <div v-if="loading" class="loading">加载中...</div>
+                        <div v-else-if="!messages.length" class="empty-chat">
+                            还没有聊天记录，打个招呼吧。
+                        </div>
+                        <div v-else class="bubble-list">
+                            <div
+                                v-for="msg in displayMessages"
+                                :key="msg.id"
+                                class="bubble"
+                                :class="{ self: msg.senderUid === auth.uid, error: msg.error }"
+                            >
+                                <span v-if="msg.error" class="bubble-error-dot"></span>
+                                <div class="bubble-name">
+                                    {{ msg.senderUid === auth.uid ? displayName : activeFriend?.username }}
+                                </div>
+                                <div class="bubble-text">{{ renderMessage(msg) }}</div>
+                                <div class="bubble-time">{{ formatTime(msg.createdAt) }}</div>
                             </div>
-                            <div class="bubble-text">{{ renderMessage(msg) }}</div>
-                            <div class="bubble-time">{{ formatTime(msg.createdAt) }}</div>
+                        </div>
+                    </div>
+
+                    <div class="composer">
+                        <div class="composer-toolbar">
+                            <button class="tool-icon-btn" title="表情">
+                                <span class="tool-glyph">&#xE170;</span>
+                            </button>
+                            <button class="tool-icon-btn" title="剪刀">
+                                <span class="tool-glyph">&#xE8C6;</span>
+                            </button>
+                            <button class="tool-icon-btn" title="文件">
+                                <span class="tool-glyph">&#xE8A5;</span>
+                            </button>
+                            <button class="tool-icon-btn" title="图片">
+                                <span class="tool-glyph">&#xEB9F;</span>
+                            </button>
+                            <button class="tool-icon-btn" title="红包">
+                                <span class="tool-glyph">&#xE7C3;</span>
+                            </button>
+                            <button class="tool-icon-btn" title="语音">
+                                <span class="tool-glyph">&#xE720;</span>
+                            </button>
+                            <div class="tool-spacer"></div>
+                            <button class="tool-icon-btn" title="更多">
+                                <span class="tool-glyph">&#xE712;</span>
+                            </button>
+                        </div>
+                        <textarea
+                            v-model="draft"
+                            placeholder=""
+                            @keydown.enter.exact.prevent="sendMessage"
+                            @keydown.enter.shift.stop
+                        ></textarea>
+                        <div class="composer-actions">
+                            <div class="send-group">
+                                <button class="send-btn" :disabled="!canSend" @click="sendMessage">
+                                    发送
+                                </button>
+                                <button class="send-drop" title="发送选项" @click.stop="toggleSendMenu">
+                                    <span class="tool-glyph">&#xE70D;</span>
+                                </button>
+                                <div v-if="showSendMenu" class="send-menu">
+                                    <div class="send-menu-item">
+                                        <span class="send-tip-mark">&#xE73E;</span>
+                                        <span>按 Enter 键发送消息</span>
+                                    </div>
+                                    <div class="send-menu-item">
+                                        <span class="send-tip-mark">&#xE73E;</span>
+                                        <span>按 Ctrl + Enter 键发送消息</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="composer">
-                    <textarea
-                        v-model="draft"
-                        placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-                        @keydown.enter.exact.prevent="sendMessage"
-                        @keydown.enter.shift.stop
-                    ></textarea>
-                    <button class="send-btn" :disabled="!canSend" @click="sendMessage">
-                        发送
-                    </button>
+                <div v-else class="contacts-panel">
+                    <div class="contacts-header">
+                    <div class="contacts-title">{{ noticeTitle }}</div>
+                        <div class="contacts-tools">
+                            <button class="tool-btn" title="筛选">
+                                <span class="tool-icon">&#xE71C;</span>
+                                <span class="tool-dot"></span>
+                            </button>
+                            <button class="tool-btn" title="清空">
+                                <span class="tool-icon">&#xE74D;</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="contacts-body">
+                        <div v-if="!incomingRequests.length && !outgoingRequests.length" class="empty-chat">
+                            暂无好友通知
+                        </div>
+                        <div v-else class="notify-list">
+                            <div v-for="req in incomingRequests" :key="`in-${req.uid}`" class="notify-card">
+                                <div class="notify-avatar">
+                                    <img v-if="req.avatar" :src="req.avatar" alt="avatar" />
+                                    <span v-else>{{ req.username.slice(0, 2).toUpperCase() }}</span>
+                                </div>
+                                <div class="notify-main">
+                                    <div class="notify-title">
+                                        <span class="notify-name">{{ req.username }}</span>
+                                        <span class="notify-text">请求加为好友</span>
+                                    </div>
+                                    <div class="notify-sub">UID {{ req.uid }}</div>
+                                </div>
+                                <div class="notify-actions">
+                                    <button class="notify-accept" @click="handleRequestAction(req.uid, 'accept')">
+                                        同意
+                                    </button>
+                                    <button class="notify-reject" @click="handleRequestAction(req.uid, 'reject')">
+                                        拒绝
+                                    </button>
+                                </div>
+                            </div>
+                            <div v-for="req in outgoingRequests" :key="`out-${req.uid}`" class="notify-card">
+                                <div class="notify-avatar">
+                                    <img v-if="req.avatar" :src="req.avatar" alt="avatar" />
+                                    <span v-else>{{ req.username.slice(0, 2).toUpperCase() }}</span>
+                                </div>
+                                <div class="notify-main">
+                                    <div class="notify-title">
+                                        <span class="notify-name">{{ req.username }}</span>
+                                        <span class="notify-text">等待验证</span>
+                                    </div>
+                                    <div class="notify-sub">UID {{ req.uid }}</div>
+                                </div>
+                                <div class="notify-actions">
+                                    <span class="notify-status" :class="`status-${req.status}`">
+                                        {{ req.status === 'rejected' ? '已拒绝' : '等待验证' }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>
@@ -275,15 +501,22 @@ const isEditOpen = ref(false);
 const friends = ref([]);
 const activeFriend = ref(null);
 const messages = ref([]);
+const localMessages = ref([]);
 const chatBodyRef = ref(null);
 const draft = ref('');
 const loading = ref(false);
 const searchText = ref('');
 const statusText = ref('在线');
+const activeView = ref('chat');
+const contactsNoticeType = ref('friend');
+const incomingRequests = ref([]);
+const outgoingRequests = ref([]);
+const showSendMenu = ref(false);
 const pollTimers = {
     friends: null,
     messages: null,
     profile: null
+    requests: null
 };
 const lastFriendSignature = ref('');
 const lastMessageSignature = ref('');
@@ -395,6 +628,18 @@ const scheduleHideProfile = () => {
         isProfileVisible.value = false;
         profileHideTimer = null;
     }, 120);
+const openContacts = async () => {
+    activeView.value = 'contacts';
+    await loadRequests({ silent: true });
+};
+const toggleSendMenu = () => {
+    showSendMenu.value = !showSendMenu.value;
+};
+
+const handleDocumentClick = () => {
+    if (showSendMenu.value) {
+        showSendMenu.value = false;
+    }
 };
 
 const displayName = computed(() => {
@@ -451,6 +696,66 @@ const renderMessage = (msg) => {
     if (msg.type === 'voice') return '[语音消息]';
     if (msg.type === 'gif') return '[GIF 表情]';
     return '[未知消息]';
+};
+
+const displayMessages = computed(() => {
+    const targetUid = activeFriend.value?.uid;
+    const localForTarget = targetUid
+        ? localMessages.value.filter((item) => item.targetUid === targetUid)
+        : [];
+    const combined = [...messages.value, ...localForTarget];
+    return combined.slice().sort((a, b) => {
+        const aTime = a.createdAt ? Date.parse(a.createdAt) : 0;
+        const bTime = b.createdAt ? Date.parse(b.createdAt) : 0;
+        return aTime - bTime;
+    });
+});
+
+const noticeTitle = computed(() =>
+    contactsNoticeType.value === 'group' ? '群通知' : '好友通知'
+);
+
+const loadRequests = async ({ silent } = {}) => {
+    if (!auth.value.token) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/friends/requests`, {
+            headers: {
+                ...authHeader()
+            }
+        });
+        const data = await res.json();
+        if (res.ok && data?.success) {
+            incomingRequests.value = data.incoming || [];
+            outgoingRequests.value = data.outgoing || [];
+        }
+    } catch (err) {
+        if (!silent) {
+            statusText.value = '好友通知加载失败';
+        }
+    }
+};
+
+const handleRequestAction = async (uid, action) => {
+    if (!auth.value.token) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/friends/respond`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeader()
+            },
+            body: JSON.stringify({ requesterUid: uid, action })
+        });
+        const data = await res.json();
+        if (res.ok && data?.success) {
+            await loadFriends({ silent: true });
+            await loadRequests({ silent: true });
+        } else {
+            statusText.value = data?.message || '处理失败';
+        }
+    } catch (err) {
+        statusText.value = '处理失败';
+    }
 };
 
 const authHeader = () => {
@@ -642,6 +947,20 @@ const sendMessage = async () => {
     if (!canSend.value) return;
     const content = draft.value.trim();
     if (!content) return;
+    showSendMenu.value = false;
+    const localId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const localEntry = {
+        id: localId,
+        type: 'text',
+        senderUid: auth.value.uid,
+        targetUid: activeFriend.value.uid,
+        targetType: 'private',
+        data: { content },
+        createdAt: new Date().toISOString(),
+        pending: true,
+        error: false
+    };
+    localMessages.value = [...localMessages.value, localEntry];
     try {
         const res = await fetch(`${API_BASE}/api/chat/send`, {
             method: 'POST',
@@ -663,8 +982,17 @@ const sendMessage = async () => {
             draft.value = '';
             await nextTick();
             scrollToBottom();
+            localMessages.value = localMessages.value.filter((item) => item.id !== localId);
+        } else {
+            localMessages.value = localMessages.value.map((item) =>
+                item.id === localId ? { ...item, pending: false, error: true } : item
+            );
+            statusText.value = data?.message || '发送失败';
         }
     } catch (err) {
+        localMessages.value = localMessages.value.map((item) =>
+            item.id === localId ? { ...item, pending: false, error: true } : item
+        );
         statusText.value = '发送失败';
     }
 };
@@ -688,6 +1016,8 @@ onMounted(async () => {
     await loadAuth();
     await loadProfile();
     await loadFriends();
+    await loadRequests();
+    window.addEventListener('click', handleDocumentClick);
     pollTimers.friends = setInterval(() => {
         loadFriends({ silent: true });
     }, 3000);
@@ -696,12 +1026,15 @@ onMounted(async () => {
             loadMessages(activeFriend.value.uid, { silent: true });
         }
     }, 1000);
-    pollTimers.profile = setInterval(() => {
-        loadProfile({ silent: true });
-    }, 5000);
+    pollTimers.requests = setInterval(() => {
+        if (activeView.value === 'contacts') {
+            loadRequests({ silent: true });
+        }
+    }, 4000);
 });
 
 onBeforeUnmount(() => {
+    window.removeEventListener('click', handleDocumentClick);
     if (pollTimers.friends) clearInterval(pollTimers.friends);
     if (pollTimers.messages) clearInterval(pollTimers.messages);
     if (pollTimers.profile) clearInterval(pollTimers.profile);
@@ -709,6 +1042,7 @@ onBeforeUnmount(() => {
         clearTimeout(profileHideTimer);
         profileHideTimer = null;
     }
+    if (pollTimers.requests) clearInterval(pollTimers.requests);
 });
 </script>
 
@@ -1110,11 +1444,87 @@ onBeforeUnmount(() => {
 .layout {
     height: calc(100vh - var(--titlebar-h));
     display: grid;
-    grid-template-columns: 300px 1fr;
+    grid-template-columns: 70px 300px 1fr;
     gap: 18px;
-    padding: 16px 20px 20px;
+    padding: 16px 10px 20px;
     position: relative;
     z-index: 1;
+}
+
+.icon-rail {
+    border-radius: 28px;
+    padding: 16px 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    -webkit-app-region: no-drag;
+}
+
+.rail-section {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: center;
+}
+
+.rail-bottom {
+    gap: 12px;
+}
+
+.rail-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.08);
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    color: #1f2937;
+    display: grid;
+    place-items: center;
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.2s var(--ease), background 0.2s, border 0.2s;
+    box-shadow: 0 4px 8px rgba(15, 23, 42, 0.12);
+}
+
+.rail-btn:hover {
+    transform: translateY(-2px);
+    background: rgba(15, 23, 42, 0.12);
+    border-color: rgba(15, 23, 42, 0.18);
+}
+
+.rail-btn.active {
+    background: #2b6cb0;
+    border-color: rgba(43, 108, 176, 0.4);
+    color: #fff;
+    box-shadow: 0 10px 18px rgba(25, 85, 160, 0.35);
+}
+
+.rail-icon {
+    font-family: "Segoe MDL2 Assets";
+    font-size: 16px;
+}
+
+.rail-dot {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ff5a3c;
+}
+
+.rail-badge {
+    position: absolute;
+    right: -2px;
+    top: -6px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #ff5a3c;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    box-shadow: 0 6px 12px rgba(255, 90, 60, 0.35);
 }
 
 .sidebar {
@@ -1131,9 +1541,167 @@ onBeforeUnmount(() => {
     transition: opacity 260ms ease 60ms, transform 320ms ease 60ms;
 }
 
+.chat-sidebar,
+.contacts-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    height: 100%;
+}
+
+.contacts-search {
+    display: grid;
+    gap: 12px;
+}
+
+.contacts-search-box {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: 16px;
+    padding: 8px 12px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    width: 270px;
+}
+
+.contacts-search-box input {
+    border: none;
+    background: transparent;
+    font-size: 13px;
+}
+
+.contacts-search-box input:focus {
+    outline: none;
+}
+
+.contacts-add-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: none;
+    background: rgba(43, 108, 176, 0.2);
+    color: #1d4ed8;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.friend-manager-btn {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(31, 41, 55, 0.08);
+    border-radius: 16px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #1f2937;
+    font-weight: 600;
+    cursor: pointer;
+    width: 270px;
+}
+
+.manager-icon {
+    font-family: "Segoe MDL2 Assets";
+    font-size: 14px;
+}
+
+.contacts-section {
+    display: grid;
+    gap: 10px;
+}
+
+.contacts-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(17, 24, 39, 0.08);
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.contacts-item.active {
+    background: rgba(29, 78, 216, 0.16);
+    color: #1d4ed8;
+}
+
+.contacts-item .badge {
+    background: #ff5a3c;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 999px;
+    margin-left: 140px;
+
+}
+
+.chev {
+    font-family: "Segoe MDL2 Assets";
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.contacts-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: rgba(17, 24, 39, 0.08);
+    border-radius: 14px;
+    padding: 4px;
+    gap: 6px;
+}
+
+.contacts-tab {
+    border: none;
+    background: transparent;
+    padding: 8px 0;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.contacts-tab.active {
+    background: #1d4ed8;
+    color: #fff;
+}
+
+.contacts-list {
+    display: grid;
+    gap: 10px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.contacts-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.contacts-row .count {
+    color: #6b7280;
+    font-weight: 600;
+}
+
 .search {
     display: grid;
     gap: 8px;
+}
+
+.search-icon {
+    color: #64748b;
+    font-size: 14px;
 }
 
 .search-hint {
@@ -1239,6 +1807,163 @@ onBeforeUnmount(() => {
     transition: opacity 280ms ease 120ms, transform 360ms ease 120ms;
 }
 
+.chat-panel,
+.contacts-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+}
+
+.contacts-header {
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.contacts-title {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.contacts-tools {
+    display: flex;
+    gap: 12px;
+}
+
+.tool-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    border: none;
+    background: rgba(15, 23, 42, 0.08);
+    cursor: pointer;
+    position: relative;
+}
+
+.tool-icon {
+    font-family: "Segoe MDL2 Assets";
+    font-size: 14px;
+    color: #1f2937;
+}
+
+.tool-dot {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ff5a3c;
+}
+
+.contacts-body {
+    padding: 20px 24px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+    background: linear-gradient(180deg, rgba(243, 248, 255, 0.9), rgba(255, 255, 255, 0.95));
+}
+
+.notify-list {
+    display: grid;
+    gap: 16px;
+}
+
+.notify-card {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid rgba(72, 147, 214, 0.18);
+    color: #1f2937;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+.notify-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #1f4c7a;
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-weight: 600;
+}
+
+.notify-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.notify-main {
+    display: grid;
+    gap: 6px;
+}
+
+.notify-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+}
+
+.notify-name {
+    color: #2563eb;
+}
+
+.notify-text {
+    color: #1f2937;
+}
+
+.notify-sub {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.notify-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.notify-accept,
+.notify-reject {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: rgba(15, 23, 42, 0.06);
+    color: #1f2937;
+    padding: 6px 14px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.notify-accept {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+}
+
+.notify-status {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9ca3af;
+}
+
+.notify-status.status-rejected {
+    color: #f87171;
+}
+
 .chat-header {
     padding: 18px 22px;
     border-bottom: 1px solid var(--line);
@@ -1310,12 +2035,28 @@ onBeforeUnmount(() => {
     box-shadow: 0 8px 18px rgba(27, 28, 32, 0.08);
     display: grid;
     gap: 6px;
+    position: relative;
 }
 
 .bubble.self {
     align-self: flex-end;
     background: #2b6cb0;
     color: #fff;
+}
+
+.bubble.error {
+    border: 1px solid rgba(255, 90, 60, 0.4);
+}
+
+.bubble-error-dot {
+    position: absolute;
+    left: -8px;
+    top: 10px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ff5a3c;
+    box-shadow: 0 0 0 3px rgba(255, 90, 60, 0.2);
 }
 
 .bubble-name {
@@ -1350,25 +2091,98 @@ onBeforeUnmount(() => {
     padding: 16px 22px 18px;
     border-top: 1px solid var(--line);
     display: grid;
-    grid-template-columns: 1fr 120px;
     gap: 12px;
     flex: 0 0 auto;
+}
+
+.composer-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 4px 2px;
+}
+
+.tool-icon-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #4b5563;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: background 0.2s, border 0.2s, color 0.2s;
+}
+
+.tool-icon-btn:hover {
+    background: rgba(15, 23, 42, 0.06);
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #1f2937;
+}
+
+.tool-glyph {
+    font-family: "Segoe MDL2 Assets";
+    font-size: 16px;
+}
+
+.tool-spacer {
+    flex: 1;
 }
 
 .composer textarea {
     min-height: 70px;
     resize: none;
     font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    border-radius: 12px;
+    border: unset;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.9);
+    outline: none;
+}
+
+.composer textarea::-webkit-scrollbar {
+    display: none;
+}
+   
+
+
+.composer textarea:focus {
+    box-shadow: unset;
+}
+
+
+.composer-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.send-tip-mark {
+    font-family: "Segoe MDL2 Assets";
+    font-size: 14px;
+    color: #1d4ed8;
+}
+
+.send-group {
+    display: inline-flex;
+    align-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-radius: 14px;
+    overflow: visible;
+    box-shadow: 0 10px 18px rgba(72, 147, 214, 0.25);
+    position: relative;
 }
 
 .send-btn {
     border: none;
-    border-radius: 14px;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
     color: #fff;
     font-weight: 600;
     cursor: pointer;
     transition: transform 0.2s var(--ease);
+    padding: 10px 22px;
+    background: transparent;
 }
 
 .send-btn:disabled {
@@ -1381,11 +2195,55 @@ onBeforeUnmount(() => {
     transform: translateY(-2px);
 }
 
+.send-drop {
+    width: 36px;
+    height: 100%;
+    border: none;
+        background: unset;
+    color: #fff;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+}
+
+.send-menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 10px);
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    box-shadow: 0 18px 30px rgba(15, 23, 42, 0.16);
+    padding: 8px 10px;
+    display: grid;
+    gap: 6px;
+    min-width: 220px;
+    z-index: 5;
+}
+
+.send-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: #374151;
+    padding: 6px 8px;
+    border-radius: 8px;
+}
+
+.send-menu-item:hover {
+    background: rgba(15, 23, 42, 0.06);
+}
+
 .loading,
 .empty-chat {
     font-size: 13px;
     color: var(--ink-soft);
     text-align: center;
+}
+
+.contacts-panel .empty-chat {
+    color: #64748b;
 }
 
 .serach_input{

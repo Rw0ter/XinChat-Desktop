@@ -108,8 +108,13 @@ router.post('/send', authenticate, async (req, res) => {
       return;
     }
 
-    if (!Array.isArray(user.friends) || !user.friends.includes(targetUid)) {
-      res.status(403).json({ success: false, message: 'Not friends with target user.' });
+    const isMutualFriend =
+      Array.isArray(user.friends) &&
+      user.friends.includes(targetUid) &&
+      Array.isArray(targetUser.friends) &&
+      targetUser.friends.includes(user.uid);
+    if (!isMutualFriend) {
+      res.status(403).json({ success: false, message: 'Not mutual friends.' });
       return;
     }
 
@@ -162,8 +167,13 @@ router.get('/get', authenticate, async (req, res) => {
       res.status(404).json({ success: false, message: 'Target user not found.' });
       return;
     }
-    if (!Array.isArray(user.friends) || !user.friends.includes(targetUid)) {
-      res.status(403).json({ success: false, message: 'Not friends with target user.' });
+    const isMutualFriend =
+      Array.isArray(user.friends) &&
+      user.friends.includes(targetUid) &&
+      Array.isArray(targetUser.friends) &&
+      targetUser.friends.includes(user.uid);
+    if (!isMutualFriend) {
+      res.status(403).json({ success: false, message: 'Not mutual friends.' });
       return;
     }
 

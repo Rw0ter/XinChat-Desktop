@@ -59,13 +59,20 @@
                 <button
                     class="add-btn"
                     @click="handleAddFriend"
-                    :disabled="adding || isAdded"
+                    :disabled="adding || requestState === 'added'"
                 >
-                    {{ isAdded ? '已添加' : adding ? '添加中...' : '添加' }}
+                    {{
+                        requestState === 'added'
+                            ? '已添加'
+                            : adding
+                            ? '申请中...'
+                            : '申请'
+                    }}
                 </button>
             </div>
             <div v-if="!result && !status" class="empty">暂无搜索结果</div>
         </section>
+
     </div>
 </template>
 
@@ -124,6 +131,12 @@ const isAdded = computed(() => {
     return friends.value.some((item) => item.uid === result.value.uid);
 });
 
+const requestState = computed(() => {
+    if (!result.value) return 'none';
+    if (isAdded.value) return 'added';
+    return 'none';
+});
+
 const handleSearch = async () => {
     if (!auth.value.token) {
         status.value = '请先登录后再搜索。';
@@ -174,8 +187,12 @@ const handleAddFriend = async () => {
         });
         const data = await res.json();
         if (res.ok && data?.success) {
-            status.value = '添加成功。';
-            friends.value = [...friends.value, { ...result.value }];
+            if (data.status === 'accepted') {
+                status.value = '已同意并成为好友。';
+                await loadFriends();
+            } else {
+                status.value = '已发送好友申请，等待对方同意。';
+            }
         } else {
             status.value = data?.message || '添加失败。';
         }

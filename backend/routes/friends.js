@@ -4,6 +4,8 @@ import { readUsers, writeUsers } from './auth.js';
 const router = express.Router();
 
 const normalizeUsername = (value) => value.trim().toLowerCase();
+const REQUEST_STATUS_PENDING = 'pending';
+const REQUEST_STATUS_REJECTED = 'rejected';
 
 const extractToken = (req) => {
   const header = req.headers.authorization || '';
@@ -64,6 +66,33 @@ const isUserOnline = (user) => {
   return Date.now() <= expiresAt;
 };
 
+const ensureFriendRequests = (user) => {
+  if (!user.friendRequests || typeof user.friendRequests !== 'object') {
+    user.friendRequests = { incoming: [], outgoing: [] };
+  }
+  if (!Array.isArray(user.friendRequests.incoming)) {
+    user.friendRequests.incoming = [];
+  }
+  if (!Array.isArray(user.friendRequests.outgoing)) {
+    user.friendRequests.outgoing = [];
+  }
+};
+
+const nowIso = () => new Date().toISOString();
+
+const findRequest = (list, uid) =>
+  list.find((item) => item && Number.isInteger(item.uid) && item.uid === uid);
+
+const removeRequest = (list, uid) =>
+  list.filter((item) => !(item && Number.isInteger(item.uid) && item.uid === uid));
+
+const normalizeOutgoingEntry = (entry) => ({
+  uid: entry.uid,
+  status: entry.status || REQUEST_STATUS_PENDING,
+  createdAt: entry.createdAt || nowIso(),
+  resolvedAt: entry.resolvedAt || null,
+});
+
 router.post('/add', authenticate, async (req, res) => {
   const { users, user, userIndex } = req.auth;
   const friend = resolveFriend(users, req.body);
@@ -79,16 +108,88 @@ router.post('/add', authenticate, async (req, res) => {
   }
 
   const updatedUser = users[userIndex];
-  if (!updatedUser.friends.includes(friend.uid)) {
-    updatedUser.friends.push(friend.uid);
-  }
   const friendIndex = users.findIndex((item) => item.uid === friend.uid);
-  if (friendIndex >= 0 && !users[friendIndex].friends.includes(user.uid)) {
-    users[friendIndex].friends.push(user.uid);
+  const friendUser = friendIndex >= 0 ? users[friendIndex] : null;
+  if (!friendUser) {
+    res.status(404).json({ success: false, message: 'Friend not found.' });
+    return;
   }
 
+  if (
+    Array.isArray(updatedUser.friends) &&
+    updatedUser.friends.includes(friend.uid) &&
+    Array.isArray(friendUser.friends) &&
+    friendUser.friends.includes(updatedUser.uid)
+  ) {
+    res.json({ success: true, status: 'already_friends' });
+    return;
+  }
+
+  ensureFriendRequests(updatedUser);
+  ensureFriendRequests(friendUser);
+
+  const incomingEntry = findRequest(updatedUser.friendRequests.incoming, friend.uid);
+  if (incomingEntry) {
+    updatedUser.friendRequests.incoming = removeRequest(
+      updatedUser.friendRequests.incoming,
+      friend.uid
+    );
+    friendUser.friendRequests.outgoing = removeRequest(
+      friendUser.friendRequests.outgoing,
+      updatedUser.uid
+    );
+
+    if (!updatedUser.friends.includes(friend.uid)) {
+      updatedUser.friends.push(friend.uid);
+    }
+    if (!friendUser.friends.includes(updatedUser.uid)) {
+      friendUser.friends.push(updatedUser.uid);
+    }
+
+    await writeUsers(users);
+    res.json({ success: true, status: 'accepted' });
+    return;
+  }
+
+  const outgoingEntry = findRequest(updatedUser.friendRequests.outgoing, friend.uid);
+  if (outgoingEntry && outgoingEntry.status === REQUEST_STATUS_PENDING) {
+    res.json({ success: true, status: 'pending' });
+    return;
+  }
+
+  const nextOutgoing =
+    outgoingEntry && outgoingEntry.status === REQUEST_STATUS_REJECTED
+      ? {
+          ...outgoingEntry,
+          status: REQUEST_STATUS_PENDING,
+          createdAt: nowIso(),
+          resolvedAt: null,
+        }
+      : {
+          uid: friend.uid,
+          status: REQUEST_STATUS_PENDING,
+          createdAt: nowIso(),
+          resolvedAt: null,
+        };
+
+  updatedUser.friendRequests.outgoing = removeRequest(
+    updatedUser.friendRequests.outgoing,
+    friend.uid
+  );
+  updatedUser.friendRequests.outgoing.push(normalizeOutgoingEntry(nextOutgoing));
+
+  friendUser.friendRequests.incoming = removeRequest(
+    friendUser.friendRequests.incoming,
+    updatedUser.uid
+  );
+  friendUser.friendRequests.incoming.push({
+    uid: updatedUser.uid,
+    status: REQUEST_STATUS_PENDING,
+    createdAt: nowIso(),
+  });
+
   await writeUsers(users);
-  res.json({ success: true, friends: updatedUser.friends });
+  res.json({ success: true, status: 'pending' });
 });
 
 router.delete('/remove', authenticate, async (req, res) => {
@@ -107,7 +208,26 @@ router.delete('/remove', authenticate, async (req, res) => {
     users[friendIndex].friends = users[friendIndex].friends.filter(
       (uid) => uid !== user.uid
     );
+    ensureFriendRequests(users[friendIndex]);
+    users[friendIndex].friendRequests.incoming = removeRequest(
+      users[friendIndex].friendRequests.incoming,
+      user.uid
+    );
+    users[friendIndex].friendRequests.outgoing = removeRequest(
+      users[friendIndex].friendRequests.outgoing,
+      user.uid
+    );
   }
+
+  ensureFriendRequests(updatedUser);
+  updatedUser.friendRequests.incoming = removeRequest(
+    updatedUser.friendRequests.incoming,
+    friend.uid
+  );
+  updatedUser.friendRequests.outgoing = removeRequest(
+    updatedUser.friendRequests.outgoing,
+    friend.uid
+  );
 
   await writeUsers(users);
   res.json({ success: true, friends: updatedUser.friends });
@@ -125,6 +245,134 @@ router.get('/list', authenticate, async (req, res) => {
       online: isUserOnline(item),
     }));
   res.json({ success: true, friends });
+});
+
+router.get('/requests', authenticate, async (req, res) => {
+  const { users, user, userIndex } = req.auth;
+  const updatedUser = users[userIndex];
+  ensureFriendRequests(updatedUser);
+
+  let touched = false;
+  const mapUser = (uid) =>
+    users.find((item) => item.uid === uid) || null;
+
+  const incoming = updatedUser.friendRequests.incoming
+    .map((entry) => {
+      const target = mapUser(entry.uid);
+      if (!target) {
+        touched = true;
+        return null;
+      }
+      return {
+        uid: target.uid,
+        username: target.username,
+        avatar: target.avatar || '',
+        status: entry.status || REQUEST_STATUS_PENDING,
+        createdAt: entry.createdAt || null,
+      };
+    })
+    .filter(Boolean);
+
+  const outgoing = updatedUser.friendRequests.outgoing
+    .map((entry) => {
+      const target = mapUser(entry.uid);
+      if (!target) {
+        touched = true;
+        return null;
+      }
+      return {
+        uid: target.uid,
+        username: target.username,
+        avatar: target.avatar || '',
+        status: entry.status || REQUEST_STATUS_PENDING,
+        createdAt: entry.createdAt || null,
+        resolvedAt: entry.resolvedAt || null,
+      };
+    })
+    .filter(Boolean);
+
+  if (touched) {
+    updatedUser.friendRequests.incoming = updatedUser.friendRequests.incoming.filter(
+      (entry) => mapUser(entry.uid)
+    );
+    updatedUser.friendRequests.outgoing = updatedUser.friendRequests.outgoing.filter(
+      (entry) => mapUser(entry.uid)
+    );
+    await writeUsers(users);
+  }
+
+  res.json({ success: true, incoming, outgoing });
+});
+
+router.post('/respond', authenticate, async (req, res) => {
+  const { users, user, userIndex } = req.auth;
+  const { requesterUid, action } = req.body || {};
+  const requesterId = Number(requesterUid);
+  if (!Number.isInteger(requesterId)) {
+    res.status(400).json({ success: false, message: 'Invalid requester uid.' });
+    return;
+  }
+  if (action !== 'accept' && action !== 'reject') {
+    res.status(400).json({ success: false, message: 'Invalid action.' });
+    return;
+  }
+
+  const updatedUser = users[userIndex];
+  ensureFriendRequests(updatedUser);
+  const incomingEntry = findRequest(updatedUser.friendRequests.incoming, requesterId);
+  if (!incomingEntry) {
+    res.status(404).json({ success: false, message: 'Request not found.' });
+    return;
+  }
+
+  const requesterIndex = users.findIndex((item) => item.uid === requesterId);
+  const requester = requesterIndex >= 0 ? users[requesterIndex] : null;
+  if (requester) {
+    ensureFriendRequests(requester);
+  }
+
+  updatedUser.friendRequests.incoming = removeRequest(
+    updatedUser.friendRequests.incoming,
+    requesterId
+  );
+
+  if (action === 'accept') {
+    if (!updatedUser.friends.includes(requesterId)) {
+      updatedUser.friends.push(requesterId);
+    }
+    if (requester && !requester.friends.includes(updatedUser.uid)) {
+      requester.friends.push(updatedUser.uid);
+    }
+    if (requester) {
+      requester.friendRequests.outgoing = removeRequest(
+        requester.friendRequests.outgoing,
+        updatedUser.uid
+      );
+    }
+    await writeUsers(users);
+    res.json({ success: true, status: 'accepted' });
+    return;
+  }
+
+  if (requester) {
+    const outgoingEntry = findRequest(requester.friendRequests.outgoing, updatedUser.uid);
+    if (outgoingEntry) {
+      requester.friendRequests.outgoing = removeRequest(
+        requester.friendRequests.outgoing,
+        updatedUser.uid
+      );
+      requester.friendRequests.outgoing.push(
+        normalizeOutgoingEntry({
+          ...outgoingEntry,
+          status: REQUEST_STATUS_REJECTED,
+          resolvedAt: nowIso(),
+        })
+      );
+    }
+  }
+
+  await writeUsers(users);
+  res.json({ success: true, status: 'rejected' });
 });
 
 router.get('/search', authenticate, async (req, res) => {
