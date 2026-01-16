@@ -167,7 +167,7 @@
     "country": "",
     "province": "",
     "region": "",
-    "online": true,
+    "online": false,
     "friendRequests": {
       "incoming": [],
       "outgoing": []
