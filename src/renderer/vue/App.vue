@@ -380,15 +380,16 @@
                 </div>
             </section>
         </main>
-        <div v-if="isEditOpen" class="profile-modal">
-            <div class="profile-modal__backdrop" @click="closeEditProfile"></div>
-            <div class="profile-modal__panel">
-                <div class="profile-modal__header">
-                    <div class="profile-modal__title">编辑资料</div>
-                    <button class="profile-modal__close" type="button" @click="closeEditProfile">×</button>
-                </div>
-                <div class="profile-modal__body">
-                    <div class="profile-modal__avatar">{{ initials }}</div>
+        <transition name="profile-modal" appear>
+            <div v-show="isEditOpen" class="profile-modal">
+                <div class="profile-modal__backdrop" @click="closeEditProfile"></div>
+                <div class="profile-modal__panel">
+                    <div class="profile-modal__header">
+                        <div class="profile-modal__title">编辑资料</div>
+                        <button class="profile-modal__close" type="button" @click="closeEditProfile">×</button>
+                    </div>
+                    <div class="profile-modal__body">
+                        <div class="profile-modal__avatar">{{ initials }}</div>
 
                     <label class="profile-field" :class="{ 'is-invalid': nicknameInvalid }">
                         <span class="profile-field__label">昵称</span>
@@ -461,13 +462,14 @@
                             />
                         </label>
                     </div>
-                </div>
-                <div class="profile-modal__footer">
-                    <button class="profile-btn" type="button" @click="saveProfile">保存</button>
-                    <button class="profile-btn ghost" type="button" @click="closeEditProfile">取消</button>
+                    </div>
+                    <div class="profile-modal__footer">
+                        <button class="profile-btn" type="button" @click="saveProfile">保存</button>
+                        <button class="profile-btn ghost" type="button" @click="closeEditProfile">取消</button>
+                    </div>
                 </div>
             </div>
-        </div>
+        </transition>
     </div>
 </template>
 
@@ -643,81 +645,6 @@ const scheduleHideProfile = () => {
         profileHideTimer = null;
     }, 120);
 };
-
-const buildWsUrl = () => {
-    const base = new URL(API_BASE);
-    base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
-    base.pathname = '/ws';
-    base.searchParams.set('token', auth.value.token || '');
-    return base.toString();
-};
-
-const closeWebSocket = () => {
-    if (wsReconnectTimer) {
-        clearTimeout(wsReconnectTimer);
-        wsReconnectTimer = null;
-    }
-    if (wsRef.value) {
-        wsRef.value.onopen = null;
-        wsRef.value.onclose = null;
-        wsRef.value.onmessage = null;
-        wsRef.value.onerror = null;
-        wsRef.value.close();
-        wsRef.value = null;
-    }
-};
-
-const scheduleReconnect = () => {
-    if (wsReconnectTimer || !auth.value.token) {
-        return;
-    }
-    const delay = Math.min(1000 * 2 ** wsReconnectAttempts, 15000);
-    wsReconnectAttempts += 1;
-    wsReconnectTimer = setTimeout(() => {
-        wsReconnectTimer = null;
-        connectWebSocket();
-    }, delay);
-};
-
-const handleWsMessage = (payload) => {
-    let message = null;
-    try {
-        message = JSON.parse(payload);
-    } catch {
-        return;
-    }
-    if (!message?.type) {
-        return;
-    }
-    if (message.type === 'friends') {
-        loadFriends({ silent: true });
-        return;
-    }
-    if (message.type === 'requests') {
-        loadRequests({ silent: true });
-        return;
-    }
-    if (message.type !== 'chat' || !message.data) {
-        return;
-    }
-    const entry = message.data;
-    if (!entry.id || messageIdSet.has(entry.id)) {
-        return;
-    }
-    const activeUid = activeFriend.value?.uid;
-    if (
-        entry.targetType === 'private' &&
-        activeUid &&
-        ((entry.senderUid === auth.value.uid && entry.targetUid === activeUid) ||
-            (entry.senderUid === activeUid && entry.targetUid === auth.value.uid))
-    ) {
-        messageIdSet.add(entry.id);
-        messages.value = [...messages.value, entry];
-        if (entry.senderUid !== auth.value.uid) {
-            playNotifySound();
-        }
-    }
-);
 
 watch(
     () => editForm.value.province,
@@ -1399,13 +1326,13 @@ onBeforeUnmount(() => {
 
 .profile-popover {
     position: absolute;
-    top: 44px;
+    top: 10px;
     right: 0;
     width: 320px;
-    height: 360px;
+    height: auto;
     background: linear-gradient(145deg, #ffffff, #f2f5fb);
     border-radius: 18px;
-    padding: 20px;
+    padding: 16px;
     box-shadow: 0 18px 48px rgba(22, 32, 52, 0.16);
     border: 1px solid rgba(31, 65, 120, 0.12);
     opacity: 0;
@@ -1425,8 +1352,8 @@ onBeforeUnmount(() => {
 .profile-head {
     display: flex;
     gap: 14px;
-    align-items: center;
-    margin-bottom: 18px;
+    align-items: flex-start;
+    margin-bottom: 8px;
 }
 
 .profile-avatar {
@@ -1466,7 +1393,7 @@ onBeforeUnmount(() => {
 .profile-details {
     display: grid;
     gap: 4px;
-    margin-top: 6px;
+    margin-top: 2px;
     font-size: 12px;
     color: rgba(28, 36, 54, 0.65);
 }
@@ -1479,7 +1406,8 @@ onBeforeUnmount(() => {
     margin-top: auto;
     display: flex;
     gap: 12px;
-    justify-content: flex-end;
+    justify-content: center;
+    padding-bottom: 8px;
     -webkit-app-region: no-drag;
 }
 
@@ -1510,6 +1438,7 @@ onBeforeUnmount(() => {
     z-index: 2000;
     display: grid;
     place-items: center;
+    opacity: 1;
 }
 
 .profile-modal__backdrop {
@@ -1517,6 +1446,7 @@ onBeforeUnmount(() => {
     inset: 0;
     background: rgba(15, 23, 42, 0.18);
     backdrop-filter: blur(6px);
+    transition: opacity 140ms ease-out, backdrop-filter 140ms ease-out;
 }
 
 .profile-modal__panel {
@@ -1533,6 +1463,9 @@ onBeforeUnmount(() => {
     display: flex;
     flex-direction: column;
     -webkit-app-region: no-drag;
+    transform-origin: center;
+    transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1), opacity 200ms ease-out;
+    transition-delay: 80ms;
 }
 
 .profile-modal__header {
@@ -1658,6 +1591,32 @@ onBeforeUnmount(() => {
     justify-content: flex-end;
     gap: 12px;
     margin-top: 16px;
+}
+
+.profile-modal-enter-active,
+.profile-modal-leave-active {
+    transition: opacity 160ms ease-out;
+}
+
+.profile-modal-enter-from,
+.profile-modal-leave-to {
+    opacity: 0;
+}
+
+.profile-modal-enter-from .profile-modal__panel,
+.profile-modal-leave-to .profile-modal__panel {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+}
+
+.profile-modal-leave-to .profile-modal__panel {
+    transition-delay: 0ms;
+}
+
+.profile-modal-enter-from .profile-modal__backdrop,
+.profile-modal-leave-to .profile-modal__backdrop {
+    opacity: 0;
+    backdrop-filter: blur(2px);
 }
 
 .user-name {
