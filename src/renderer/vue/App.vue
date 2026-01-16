@@ -428,7 +428,7 @@
 
                     <label class="profile-field">
                         <span class="profile-field__label">生日</span>
-                        <input v-model="editForm.birthday" type="date" />
+                        <input v-model="editForm.birthday" type="date" class="profile-field__date" />
                     </label>
 
                     <label class="profile-field">
@@ -1308,12 +1308,15 @@ onBeforeUnmount(() => {
     position: relative;
     width: 520px;
     max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 64px);
     background: #f7f9ff;
     border-radius: 18px;
     border: 1px solid rgba(31, 65, 120, 0.12);
     box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
     padding: 20px 22px 18px;
     z-index: 1;
+    display: flex;
+    flex-direction: column;
     -webkit-app-region: no-drag;
 }
 
@@ -1341,6 +1344,11 @@ onBeforeUnmount(() => {
 .profile-modal__body {
     display: grid;
     gap: 12px;
+    overflow-y: auto;
+    padding-right: 6px;
+    flex: 1;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 .profile-modal__avatar {
@@ -1386,6 +1394,21 @@ onBeforeUnmount(() => {
 .profile-field select,
 .profile-field input[type="date"] {
     width: 100%;
+}
+
+.profile-field__date {
+    appearance: none;
+    border: 1px solid rgba(31, 65, 120, 0.18);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: #1c2436;
+    background: #fff;
+}
+
+.profile-field__date::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.7;
 }
 
 .profile-field--split {
