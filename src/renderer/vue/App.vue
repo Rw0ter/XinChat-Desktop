@@ -997,7 +997,7 @@ const loadFriends = async ({ silent } = {}) => {
     }
 };
 
-const loadMessages = async (targetUid, { silent } = {}) => {
+const loadMessages = async (targetUid, { silent, forceScroll } = {}) => {
     if (!auth.value.token || !targetUid) return;
     if (!silent) {
         loading.value = true;
@@ -1010,7 +1010,7 @@ const loadMessages = async (targetUid, { silent } = {}) => {
             const next = data.data || [];
             const signature = buildMessageSignature(next);
             if (signature !== lastMessageSignature.value) {
-                const shouldStick = isAtBottom();
+                const shouldStick = forceScroll ? true : isAtBottom();
                 const incoming = next.filter(
                     (msg) => msg.senderUid !== auth.value.uid
                 );
@@ -1029,6 +1029,10 @@ const loadMessages = async (targetUid, { silent } = {}) => {
                     await nextTick();
                     scrollToBottom();
                 }
+            }
+            if (forceScroll && signature === lastMessageSignature.value) {
+                await nextTick();
+                scrollToBottom();
             }
         } else {
             if (!silent) {
@@ -1052,7 +1056,7 @@ const loadMessages = async (targetUid, { silent } = {}) => {
 
 const selectFriend = (friend) => {
     activeFriend.value = friend;
-    loadMessages(friend.uid);
+    loadMessages(friend.uid, { forceScroll: true });
 };
 
 const sendMessage = async () => {
