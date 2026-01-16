@@ -669,7 +669,18 @@ const handleWsMessage = (payload) => {
     } catch {
         return;
     }
-    if (message?.type !== 'chat' || !message.data) {
+    if (!message?.type) {
+        return;
+    }
+    if (message.type === 'friends') {
+        loadFriends({ silent: true });
+        return;
+    }
+    if (message.type === 'requests') {
+        loadRequests({ silent: true });
+        return;
+    }
+    if (message.type !== 'chat' || !message.data) {
         return;
     }
     const entry = message.data;

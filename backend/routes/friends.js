@@ -6,6 +6,7 @@ const router = express.Router();
 const normalizeUsername = (value) => value.trim().toLowerCase();
 const REQUEST_STATUS_PENDING = 'pending';
 const REQUEST_STATUS_REJECTED = 'rejected';
+let friendsNotifier = null;
 
 const extractToken = (req) => {
   const header = req.headers.authorization || '';
@@ -93,6 +94,17 @@ const normalizeOutgoingEntry = (entry) => ({
   resolvedAt: entry.resolvedAt || null,
 });
 
+const setFriendsNotifier = (notifier) => {
+  friendsNotifier = typeof notifier === 'function' ? notifier : null;
+};
+
+const notifyUsers = (uids, payload) => {
+  if (!friendsNotifier) return;
+  const list = Array.from(new Set(uids.filter(Number.isInteger)));
+  if (!list.length) return;
+  friendsNotifier(list, payload);
+};
+
 router.post('/add', authenticate, async (req, res) => {
   const { users, user, userIndex } = req.auth;
   const friend = resolveFriend(users, req.body);
@@ -147,6 +159,8 @@ router.post('/add', authenticate, async (req, res) => {
     }
 
     await writeUsers(users);
+    notifyUsers([updatedUser.uid, friendUser.uid], { type: 'friends' });
+    notifyUsers([updatedUser.uid, friendUser.uid], { type: 'requests' });
     res.json({ success: true, status: 'accepted' });
     return;
   }
@@ -189,6 +203,7 @@ router.post('/add', authenticate, async (req, res) => {
   });
 
   await writeUsers(users);
+  notifyUsers([updatedUser.uid, friendUser.uid], { type: 'requests' });
   res.json({ success: true, status: 'pending' });
 });
 
@@ -230,6 +245,8 @@ router.delete('/remove', authenticate, async (req, res) => {
   );
 
   await writeUsers(users);
+  notifyUsers([updatedUser.uid, friend.uid], { type: 'friends' });
+  notifyUsers([updatedUser.uid, friend.uid], { type: 'requests' });
   res.json({ success: true, friends: updatedUser.friends });
 });
 
@@ -350,6 +367,8 @@ router.post('/respond', authenticate, async (req, res) => {
       );
     }
     await writeUsers(users);
+    notifyUsers([updatedUser.uid, requesterId], { type: 'friends' });
+    notifyUsers([updatedUser.uid, requesterId], { type: 'requests' });
     res.json({ success: true, status: 'accepted' });
     return;
   }
@@ -372,6 +391,7 @@ router.post('/respond', authenticate, async (req, res) => {
   }
 
   await writeUsers(users);
+  notifyUsers([updatedUser.uid, requesterId], { type: 'requests' });
   res.json({ success: true, status: 'rejected' });
 });
 
@@ -401,4 +421,5 @@ router.get('/search', authenticate, async (req, res) => {
   });
 });
 
+export { setFriendsNotifier };
 export default router;

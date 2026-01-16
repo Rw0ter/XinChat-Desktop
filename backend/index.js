@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 import authRouter, { ensureStorage, readUsers, writeUsers } from './routes/auth.js';
 import chatRouter, { ensureChatStorage, setChatNotifier } from './routes/chat.js';
-import friendsRouter from './routes/friends.js';
+import friendsRouter, { setFriendsNotifier } from './routes/friends.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -433,6 +433,9 @@ export function startServer(port = PORT) {
     if (entry.targetType === 'private') {
       sendToUid(entry.targetUid, payload);
     }
+  });
+  setFriendsNotifier((uids, payload) => {
+    uids.forEach((uid) => sendToUid(uid, payload));
   });
 
   return server.listen(port, async () => {
