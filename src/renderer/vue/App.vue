@@ -485,6 +485,7 @@ const activeFriend = ref(null);
 const messages = ref([]);
 const localMessages = ref([]);
 const chatBodyRef = ref(null);
+const wsRef = ref(null);
 const draft = ref('');
 const loading = ref(false);
 const searchText = ref('');
@@ -494,12 +495,9 @@ const contactsNoticeType = ref('friend');
 const incomingRequests = ref([]);
 const outgoingRequests = ref([]);
 const showSendMenu = ref(false);
-const pollTimers = {
-    friends: null,
-    messages: null,
-    profile: null,
-    requests: null
-};
+let wsReconnectTimer = null;
+let wsReconnectAttempts = 0;
+let messageIdSet = new Set();
 const lastFriendSignature = ref('');
 const lastMessageSignature = ref('');
 const lastNotifiedMessageId = ref('');
@@ -533,6 +531,7 @@ const handleLogout = () => {
         localStorage.removeItem('vp_username');
         localStorage.removeItem('vp_signature');
     } catch {}
+    closeWebSocket();
     if (auth.value.token) {
         fetch(`${API_BASE}/api/logout`, {
             method: 'POST',
@@ -704,6 +703,105 @@ watch(
         }
     }
 );
+const buildWsUrl = () => {
+    const base = new URL(API_BASE);
+    base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+    base.pathname = '/ws';
+    base.searchParams.set('token', auth.value.token || '');
+    return base.toString();
+};
+
+const closeWebSocket = () => {
+    if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    }
+    if (wsRef.value) {
+        wsRef.value.onopen = null;
+        wsRef.value.onclose = null;
+        wsRef.value.onmessage = null;
+        wsRef.value.onerror = null;
+        wsRef.value.close();
+        wsRef.value = null;
+    }
+};
+
+const scheduleReconnect = () => {
+    if (wsReconnectTimer || !auth.value.token) {
+        return;
+    }
+    const delay = Math.min(1000 * 2 ** wsReconnectAttempts, 15000);
+    wsReconnectAttempts += 1;
+    wsReconnectTimer = setTimeout(() => {
+        wsReconnectTimer = null;
+        connectWebSocket();
+    }, delay);
+};
+
+const handleWsMessage = (payload) => {
+    let message = null;
+    try {
+        message = JSON.parse(payload);
+    } catch {
+        return;
+    }
+    if (!message?.type) {
+        return;
+    }
+    if (message.type === 'friends') {
+        loadFriends({ silent: true });
+        return;
+    }
+    if (message.type === 'requests') {
+        loadRequests({ silent: true });
+        loadFriends({ silent: true });
+        return;
+    }
+    if (message.type !== 'chat' || !message.data) {
+        return;
+    }
+    const entry = message.data;
+    if (!entry.id || messageIdSet.has(entry.id)) {
+        return;
+    }
+    const activeUid = activeFriend.value?.uid;
+    if (
+        entry.targetType === 'private' &&
+        activeUid &&
+        ((entry.senderUid === auth.value.uid && entry.targetUid === activeUid) ||
+            (entry.senderUid === activeUid && entry.targetUid === auth.value.uid))
+    ) {
+        messageIdSet.add(entry.id);
+        messages.value = [...messages.value, entry];
+        if (entry.senderUid !== auth.value.uid) {
+            playNotifySound();
+        }
+        nextTick(() => {
+            scrollToBottom();
+        });
+    }
+};
+
+const connectWebSocket = () => {
+    if (!auth.value.token) {
+        return;
+    }
+    closeWebSocket();
+    const ws = new WebSocket(buildWsUrl());
+    wsRef.value = ws;
+    ws.onopen = () => {
+        wsReconnectAttempts = 0;
+        loadFriends({ silent: true });
+        loadRequests({ silent: true });
+    };
+    ws.onmessage = (event) => handleWsMessage(event.data);
+    ws.onerror = () => {
+        scheduleReconnect();
+    };
+    ws.onclose = () => {
+        scheduleReconnect();
+    };
+};
 const openContacts = async () => {
     activeView.value = 'contacts';
     await loadRequests({ silent: true });
@@ -990,6 +1088,7 @@ const loadMessages = async (targetUid, { silent } = {}) => {
                     }
                 }
                 messages.value = next;
+                messageIdSet = new Set(next.map((item) => item.id).filter(Boolean));
                 lastMessageSignature.value = signature;
                 if (shouldStick) {
                     await nextTick();
@@ -999,12 +1098,14 @@ const loadMessages = async (targetUid, { silent } = {}) => {
         } else {
             if (!silent) {
                 messages.value = [];
+                messageIdSet = new Set();
                 lastMessageSignature.value = '';
             }
         }
     } catch (err) {
         if (!silent) {
             messages.value = [];
+            messageIdSet = new Set();
             lastMessageSignature.value = '';
         }
     } finally {
@@ -1054,7 +1155,10 @@ const sendMessage = async () => {
         });
         const data = await res.json();
         if (res.ok && data?.success) {
-            messages.value = [...messages.value, data.data];
+            if (data.data?.id && !messageIdSet.has(data.data.id)) {
+                messageIdSet.add(data.data.id);
+                messages.value = [...messages.value, data.data];
+            }
             draft.value = '';
             await nextTick();
             scrollToBottom();
@@ -1093,32 +1197,28 @@ onMounted(async () => {
     await loadProfile();
     await loadFriends();
     await loadRequests();
+    connectWebSocket();
     window.addEventListener('click', handleDocumentClick);
-    pollTimers.friends = setInterval(() => {
-        loadFriends({ silent: true });
-    }, 3000);
-    pollTimers.messages = setInterval(() => {
-        if (activeFriend.value?.uid) {
-            loadMessages(activeFriend.value.uid, { silent: true });
-        }
-    }, 1000);
-    pollTimers.requests = setInterval(() => {
-        if (activeView.value === 'contacts') {
-            loadRequests({ silent: true });
-        }
-    }, 4000);
 });
+
+watch(
+    () => auth.value.token,
+    (nextToken, prevToken) => {
+        if (nextToken && nextToken !== prevToken) {
+            loadFriends({ silent: true });
+            loadRequests({ silent: true });
+            connectWebSocket();
+        }
+    }
+);
 
 onBeforeUnmount(() => {
     window.removeEventListener('click', handleDocumentClick);
-    if (pollTimers.friends) clearInterval(pollTimers.friends);
-    if (pollTimers.messages) clearInterval(pollTimers.messages);
-    if (pollTimers.profile) clearInterval(pollTimers.profile);
+    closeWebSocket();
     if (profileHideTimer) {
         clearTimeout(profileHideTimer);
         profileHideTimer = null;
     }
-    if (pollTimers.requests) clearInterval(pollTimers.requests);
 });
 </script>
 

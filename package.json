@@ -17,7 +17,9 @@
   "dependencies": {
     "express": "^4.21.2",
     "pinia": "^3.0.4",
-    "vue": "^3.4.0"
+    "sql.js": "^1.10.2",
+    "vue": "^3.4.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.0",

@@ -3,40 +3,189 @@ import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import initSqlJs from 'sql.js';
 import { readUsers, writeUsers } from './auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, '..', 'data');
-const CHAT_PATH = path.join(DATA_DIR, 'chat.json');
+const CHAT_JSON_PATH = path.join(DATA_DIR, 'chat.json');
+const DB_PATH = path.join(DATA_DIR, 'chat.sqlite');
+const DB_TMP_PATH = path.join(DATA_DIR, 'chat.sqlite.tmp');
 
 const router = express.Router();
 const ALLOWED_TYPES = new Set(['image', 'video', 'voice', 'text', 'gif']);
 const ALLOWED_TARGET_TYPES = new Set(['private', 'group']);
-
-const ensureChatStorage = async () => {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fs.access(CHAT_PATH);
-  } catch {
-    await fs.writeFile(CHAT_PATH, '[]', 'utf-8');
-  }
-};
-
-const readMessages = async () => {
-  await ensureChatStorage();
-  const raw = await fs.readFile(CHAT_PATH, 'utf-8');
-  return JSON.parse(raw);
-};
-
-const writeMessages = async (messages) => {
-  await ensureChatStorage();
-  await fs.writeFile(CHAT_PATH, JSON.stringify(messages, null, 2), 'utf-8');
-};
+const MAX_LIMIT = 500;
+const FLUSH_INTERVAL_MS = 250;
+let chatNotifier = null;
 
 const isValidType = (value) => typeof value === 'string' && ALLOWED_TYPES.has(value);
 const isValidTargetType = (value) =>
   typeof value === 'string' && ALLOWED_TARGET_TYPES.has(value);
+
+let sqlModule = null;
+let db = null;
+let flushTimer = null;
+let flushInFlight = false;
+let pendingFlush = false;
+
+const getSqlModule = async () => {
+  if (sqlModule) {
+    return sqlModule;
+  }
+  sqlModule = await initSqlJs({
+    locateFile: (file) => path.join(__dirname, '..', '..', 'node_modules', 'sql.js', 'dist', file),
+  });
+  return sqlModule;
+};
+
+const openDb = async () => {
+  if (db) {
+    return db;
+  }
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const SQL = await getSqlModule();
+  try {
+    const file = await fs.readFile(DB_PATH);
+    db = new SQL.Database(new Uint8Array(file));
+  } catch {
+    db = new SQL.Database();
+  }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      senderUid INTEGER NOT NULL,
+      targetUid INTEGER NOT NULL,
+      targetType TEXT NOT NULL,
+      data TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      createdAtMs INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_messages_private
+      ON messages (targetType, senderUid, targetUid, createdAtMs);
+    CREATE INDEX IF NOT EXISTS idx_messages_group
+      ON messages (targetType, targetUid, createdAtMs);
+  `);
+  return db;
+};
+
+const flushDb = async () => {
+  if (!db) {
+    return;
+  }
+  if (flushInFlight) {
+    pendingFlush = true;
+    return;
+  }
+  flushInFlight = true;
+  try {
+    const data = db.export();
+    await fs.writeFile(DB_TMP_PATH, Buffer.from(data));
+    await fs.rename(DB_TMP_PATH, DB_PATH);
+  } finally {
+    flushInFlight = false;
+    if (pendingFlush) {
+      pendingFlush = false;
+      await flushDb();
+    }
+  }
+};
+
+const scheduleFlush = () => {
+  if (flushTimer) {
+    return;
+  }
+  flushTimer = setTimeout(async () => {
+    flushTimer = null;
+    await flushDb();
+  }, FLUSH_INTERVAL_MS);
+};
+
+const setChatNotifier = (notifier) => {
+  chatNotifier = typeof notifier === 'function' ? notifier : null;
+};
+
+const migrateChatJson = async () => {
+  const database = await openDb();
+  const countStmt = database.prepare('SELECT COUNT(1) as count FROM messages');
+  countStmt.step();
+  const existing = countStmt.getAsObject();
+  countStmt.free();
+  if (existing.count > 0) {
+    return;
+  }
+  try {
+    const raw = await fs.readFile(CHAT_JSON_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return;
+    }
+    const insert = database.prepare(`
+      INSERT OR IGNORE INTO messages (
+        id, type, senderUid, targetUid, targetType, data, createdAt, createdAtMs
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const rows = parsed
+      .map((entry) => {
+        const createdAt =
+          typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString();
+        const createdAtMs = Number.isFinite(Date.parse(createdAt))
+          ? Date.parse(createdAt)
+          : Date.now();
+        const data =
+          entry && entry.data && typeof entry.data === 'object'
+            ? JSON.stringify(entry.data)
+            : JSON.stringify({});
+        return {
+          id: entry.id || crypto.randomUUID(),
+          type: entry.type,
+          senderUid: Number(entry.senderUid),
+          targetUid: Number(entry.targetUid),
+          targetType: entry.targetType,
+          data,
+          createdAt,
+          createdAtMs,
+        };
+      })
+      .filter(
+        (row) =>
+          isValidType(row.type) &&
+          isValidTargetType(row.targetType) &&
+          Number.isInteger(row.senderUid) &&
+          Number.isInteger(row.targetUid)
+      );
+    if (!rows.length) {
+      insert.free();
+      return;
+    }
+    database.run('BEGIN');
+    for (const row of rows) {
+      insert.run([
+        row.id,
+        row.type,
+        row.senderUid,
+        row.targetUid,
+        row.targetType,
+        row.data,
+        row.createdAt,
+        row.createdAtMs,
+      ]);
+    }
+    database.run('COMMIT');
+    insert.free();
+    scheduleFlush();
+  } catch (error) {
+    console.warn('Chat migration skipped:', error);
+  }
+};
+
+const ensureChatStorage = async () => {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await openDb();
+  await migrateChatJson();
+};
 
 const extractToken = (req) => {
   const header = req.headers.authorization || '';
@@ -77,8 +226,27 @@ const authenticate = async (req, res, next) => {
   next();
 };
 
+const toMessage = (row) => {
+  let data = {};
+  try {
+    data = JSON.parse(row.data);
+  } catch {
+    data = {};
+  }
+  return {
+    id: row.id,
+    type: row.type,
+    senderUid: row.senderUid,
+    targetUid: row.targetUid,
+    targetType: row.targetType,
+    data,
+    createdAt: row.createdAt,
+  };
+};
+
 router.post('/send', authenticate, async (req, res) => {
   try {
+    await ensureChatStorage();
     const body = req.body || {};
     if (!isValidType(body.type)) {
       res.status(400).json({ success: false, message: 'Invalid message type.' });
@@ -119,7 +287,8 @@ router.post('/send', authenticate, async (req, res) => {
     }
 
     const { type, senderUid: _, targetUid: __, targetType, ...data } = body;
-    const messages = await readMessages();
+    const createdAt = new Date().toISOString();
+    const createdAtMs = Date.now();
     const entry = {
       id: crypto.randomUUID(),
       type,
@@ -127,10 +296,30 @@ router.post('/send', authenticate, async (req, res) => {
       targetUid,
       targetType,
       data,
-      createdAt: new Date().toISOString(),
+      createdAt,
     };
-    messages.push(entry);
-    await writeMessages(messages);
+
+    const database = await openDb();
+    const stmt = database.prepare(`
+      INSERT INTO messages (
+        id, type, senderUid, targetUid, targetType, data, createdAt, createdAtMs
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run([
+      entry.id,
+      entry.type,
+      entry.senderUid,
+      entry.targetUid,
+      entry.targetType,
+      JSON.stringify(entry.data || {}),
+      entry.createdAt,
+      createdAtMs,
+    ]);
+    stmt.free();
+    scheduleFlush();
+    if (chatNotifier) {
+      chatNotifier(entry);
+    }
     res.json({ success: true, data: entry });
   } catch (error) {
     console.error('Chat send error:', error);
@@ -140,6 +329,7 @@ router.post('/send', authenticate, async (req, res) => {
 
 router.get('/get', authenticate, async (req, res) => {
   try {
+    await ensureChatStorage();
     const payload = {
       ...req.query,
       ...(req.body || {}),
@@ -147,6 +337,10 @@ router.get('/get', authenticate, async (req, res) => {
     const type = payload.type;
     const targetType = payload.targetType;
     const targetUid = Number(payload.targetUid);
+    const sinceId = typeof payload.sinceId === 'string' ? payload.sinceId.trim() : '';
+    const limitRaw = Number(payload.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 0), MAX_LIMIT) : 0;
+    let sinceMs = 0;
 
     if (!isValidTargetType(targetType)) {
       res.status(400).json({ success: false, message: 'Invalid target type.' });
@@ -159,6 +353,18 @@ router.get('/get', authenticate, async (req, res) => {
     if (type && !isValidType(type)) {
       res.status(400).json({ success: false, message: 'Invalid message type.' });
       return;
+    }
+
+    if (payload.sinceTs) {
+      const parsed = Number(payload.sinceTs);
+      if (Number.isFinite(parsed)) {
+        sinceMs = parsed;
+      } else if (typeof payload.sinceTs === 'string') {
+        const parsedDate = Date.parse(payload.sinceTs);
+        if (Number.isFinite(parsedDate)) {
+          sinceMs = parsedDate;
+        }
+      }
     }
 
     const { user, users } = req.auth;
@@ -177,21 +383,54 @@ router.get('/get', authenticate, async (req, res) => {
       return;
     }
 
-    const messages = await readMessages();
-    let filtered = messages.filter((item) => item.targetType === targetType);
+    const database = await openDb();
+    if (sinceId) {
+      const sinceStmt = database.prepare('SELECT createdAtMs FROM messages WHERE id = ?');
+      sinceStmt.bind([sinceId]);
+      if (sinceStmt.step()) {
+        const row = sinceStmt.getAsObject();
+        if (row && Number.isFinite(row.createdAtMs)) {
+          sinceMs = Math.max(sinceMs, row.createdAtMs);
+        }
+      }
+      sinceStmt.free();
+    }
+
+    const params = [targetType];
+    let sql =
+      'SELECT id, type, senderUid, targetUid, targetType, data, createdAt, createdAtMs FROM messages WHERE targetType = ?';
+
     if (targetType === 'private') {
-      filtered = filtered.filter(
-        (item) =>
-          (item.senderUid === user.uid && item.targetUid === targetUid) ||
-          (item.senderUid === targetUid && item.targetUid === user.uid)
-      );
+      sql += ' AND ((senderUid = ? AND targetUid = ?) OR (senderUid = ? AND targetUid = ?))';
+      params.push(user.uid, targetUid, targetUid, user.uid);
     } else {
-      filtered = filtered.filter((item) => item.targetUid === targetUid);
+      sql += ' AND targetUid = ?';
+      params.push(targetUid);
     }
+
     if (type) {
-      filtered = filtered.filter((item) => item.type === type);
+      sql += ' AND type = ?';
+      params.push(type);
     }
-    res.json({ success: true, data: filtered });
+    if (sinceMs > 0) {
+      sql += ' AND createdAtMs > ?';
+      params.push(sinceMs);
+    }
+    sql += ' ORDER BY createdAtMs ASC';
+    if (limit > 0) {
+      sql += ' LIMIT ?';
+      params.push(limit);
+    }
+
+    const stmt = database.prepare(sql);
+    stmt.bind(params);
+    const rows = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject());
+    }
+    stmt.free();
+    const data = rows.map(toMessage);
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Chat get error:', error);
     res.status(500).json({ success: false, message: 'Chat fetch failed.' });
@@ -200,27 +439,36 @@ router.get('/get', authenticate, async (req, res) => {
 
 router.delete('/del', async (req, res) => {
   try {
+    await ensureChatStorage();
     const { id } = req.body || {};
     if (typeof id !== 'string' || id.trim() === '') {
       res.status(400).json({ success: false, message: 'Missing message id.' });
       return;
     }
 
-    const messages = await readMessages();
-    const index = messages.findIndex((item) => item.id === id);
-    if (index === -1) {
+    const database = await openDb();
+    const selectStmt = database.prepare(
+      'SELECT id, type, senderUid, targetUid, targetType, data, createdAt, createdAtMs FROM messages WHERE id = ?'
+    );
+    selectStmt.bind([id]);
+    if (!selectStmt.step()) {
+      selectStmt.free();
       res.status(404).json({ success: false, message: 'Message not found.' });
       return;
     }
+    const existing = selectStmt.getAsObject();
+    selectStmt.free();
 
-    const [removed] = messages.splice(index, 1);
-    await writeMessages(messages);
-    res.json({ success: true, data: removed });
+    const delStmt = database.prepare('DELETE FROM messages WHERE id = ?');
+    delStmt.run([id]);
+    delStmt.free();
+    scheduleFlush();
+    res.json({ success: true, data: toMessage(existing) });
   } catch (error) {
     console.error('Chat delete error:', error);
     res.status(500).json({ success: false, message: 'Chat delete failed.' });
   }
 });
 
-export { ensureChatStorage };
+export { ensureChatStorage, setChatNotifier };
 export default router;
