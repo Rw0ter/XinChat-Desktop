@@ -478,8 +478,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, nextTick } from 'vue';
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
+import { API_BASE } from './utils/api.js';
 const NOTIFY_SOUND_URL = `${API_BASE}/resource/messagenotify.wav`;
 
 const auth = ref({

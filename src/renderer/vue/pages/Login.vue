@@ -65,6 +65,7 @@
 
 <script setup>
 import { reactive, ref } from 'vue';
+import { API_BASE } from '../utils/api.js';
 
 const mode = ref('login');
 const message = ref('');
@@ -76,7 +77,6 @@ const form = reactive({
     confirmPassword: ''
 });
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
 
 const handleMin = () => window.electronAPI?.windowMin?.();
 const handleMax = () => window.electronAPI?.windowMax?.();
