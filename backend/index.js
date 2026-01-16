@@ -6,6 +6,14 @@ import { WebSocket, WebSocketServer } from 'ws';
 import authRouter, { ensureStorage, readUsers, writeUsers } from './routes/auth.js';
 import chatRouter, { ensureChatStorage, setChatNotifier } from './routes/chat.js';
 import friendsRouter, { setFriendsNotifier } from './routes/friends.js';
+import {
+  markDisconnected,
+  isUserOnline,
+  setStatusChangeHandler,
+  setTimeoutHandler,
+  startHeartbeatMonitor,
+  touchHeartbeat,
+} from './online.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,10 +22,14 @@ const PORT = process.env.PORT || 3001;
 export const app = express();
 
 app.use(express.json());
-app.use((_, res, next) => {
+app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
   next();
 });
 
@@ -360,6 +372,10 @@ export function startServer(port = PORT) {
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws' });
   const connections = new Map();
+  const presencePayload = (uid, online) => ({
+    type: 'presence',
+    data: { uid, online },
+  });
 
   const addConnection = (uid, socket) => {
     const set = connections.get(uid) || new Set();
@@ -373,6 +389,7 @@ export function startServer(port = PORT) {
     set.delete(socket);
     if (set.size === 0) {
       connections.delete(uid);
+      markDisconnected(uid);
     }
   };
 
@@ -408,6 +425,56 @@ export function startServer(port = PORT) {
     return user;
   };
 
+  const updateUserOnlineState = async (uid, online) => {
+    const users = await readUsers();
+    const userIndex = users.findIndex((item) => item.uid === uid);
+    if (userIndex === -1) return;
+    const shouldWrite = users[userIndex].online !== online;
+    if (shouldWrite) {
+      users[userIndex] = {
+        ...users[userIndex],
+        online,
+      };
+      await writeUsers(users);
+    }
+    const notifyUids = users
+      .filter((item) => Array.isArray(item.friends) && item.friends.includes(uid))
+      .map((item) => item.uid);
+    notifyUids.forEach((friendUid) =>
+      sendToUid(friendUid, presencePayload(uid, online))
+    );
+  };
+
+  const resetOnlineState = async () => {
+    const users = await readUsers();
+    let touched = false;
+    users.forEach((user) => {
+      if (user.online) {
+        user.online = false;
+        touched = true;
+      }
+    });
+    if (touched) {
+      await writeUsers(users);
+    }
+  };
+
+  setStatusChangeHandler((uid, online) => {
+    void updateUserOnlineState(uid, online);
+  });
+  setTimeoutHandler((uid) => {
+    const set = connections.get(uid);
+    if (set) {
+      set.forEach((socket) => {
+        try {
+          socket.close(4000, 'Heartbeat timeout');
+        } catch {}
+      });
+      connections.delete(uid);
+    }
+  });
+  startHeartbeatMonitor();
+
   wss.on('connection', async (socket, req) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host}`);
@@ -419,7 +486,30 @@ export function startServer(port = PORT) {
       }
       socket._uid = user.uid;
       addConnection(user.uid, socket);
+      const statusChanged = touchHeartbeat(user.uid);
+      if (!statusChanged) {
+        void updateUserOnlineState(user.uid, true);
+      }
       socket.send(JSON.stringify({ type: 'ready', uid: user.uid }));
+      try {
+        const users = await readUsers();
+        const friendSet = new Set(user.friends || []);
+        const snapshot = users
+          .filter((item) => friendSet.has(item.uid))
+          .map((item) => ({ uid: item.uid, online: isUserOnline(item) }));
+        socket.send(JSON.stringify({ type: 'presence_snapshot', data: snapshot }));
+      } catch (error) {
+        console.error('Presence snapshot error:', error);
+      }
+      socket.on('message', (raw) => {
+        try {
+          const text = raw?.toString?.() || '';
+          const message = JSON.parse(text);
+          if (message?.type === 'heartbeat') {
+            touchHeartbeat(user.uid);
+          }
+        } catch {}
+      });
       socket.on('close', () => removeConnection(user.uid, socket));
       socket.on('error', () => removeConnection(user.uid, socket));
     } catch {
@@ -440,6 +530,7 @@ export function startServer(port = PORT) {
 
   return server.listen(port, async () => {
     await Promise.all([ensureStorage(), ensureChatStorage()]);
+    await resetOnlineState();
     console.log(`Backend listening on http://localhost:${port}`);
   });
 }

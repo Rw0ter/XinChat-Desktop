@@ -31,34 +31,39 @@ const extractToken = (req) => {
 };
 
 const authenticate = async (req, res, next) => {
-  const token = extractToken(req);
-  if (!token) {
-    res.status(401).json({ success: false, message: 'Missing token.' });
-    return;
-  }
+  try {
+    const token = extractToken(req);
+    if (!token) {
+      res.status(401).json({ success: false, message: 'Missing token.' });
+      return;
+    }
 
-  const users = await readUsers();
-  const userIndex = users.findIndex((user) => user.token === token);
-  if (userIndex === -1) {
-    res.status(401).json({ success: false, message: 'Invalid token.' });
-    return;
-  }
+    const users = await readUsers();
+    const userIndex = users.findIndex((user) => user.token === token);
+    if (userIndex === -1) {
+      res.status(401).json({ success: false, message: 'Invalid token.' });
+      return;
+    }
 
-  const user = users[userIndex];
-  const expiresAt = user.tokenExpiresAt ? Date.parse(user.tokenExpiresAt) : 0;
-  if (!expiresAt || Number.isNaN(expiresAt) || Date.now() > expiresAt) {
-    users[userIndex] = {
-      ...user,
-      token: null,
-      tokenExpiresAt: null,
-    };
-  await writeUsers(users);
-    res.status(401).json({ success: false, message: 'Token expired.' });
-    return;
-  }
+    const user = users[userIndex];
+    const expiresAt = user.tokenExpiresAt ? Date.parse(user.tokenExpiresAt) : 0;
+    if (!expiresAt || Number.isNaN(expiresAt) || Date.now() > expiresAt) {
+      users[userIndex] = {
+        ...user,
+        token: null,
+        tokenExpiresAt: null,
+      };
+      await writeUsers(users);
+      res.status(401).json({ success: false, message: 'Token expired.' });
+      return;
+    }
 
-  req.auth = { user, userIndex, users };
-  next();
+    req.auth = { user, userIndex, users };
+    next();
+  } catch (error) {
+    console.error('Authenticate error:', error);
+    res.status(500).json({ success: false, message: 'Server error.' });
+  }
 };
 
 const clearUserSession = async (users, userIndex) => {
@@ -81,7 +86,23 @@ const ensureStorage = async () => {
 const readUsers = async () => {
   await ensureStorage();
   const raw = await fs.readFile(USERS_PATH, 'utf-8');
-  const users = JSON.parse(raw);
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return [];
+  }
+  let users;
+  try {
+    users = JSON.parse(trimmed);
+  } catch (error) {
+    const backupPath = `${USERS_PATH}.corrupt-${Date.now()}`;
+    await fs.writeFile(backupPath, raw, 'utf-8');
+    await fs.writeFile(USERS_PATH, '[]', 'utf-8');
+    const wrapped = new Error(
+      `Failed to parse users.json. Backup created at ${backupPath}.`
+    );
+    wrapped.cause = error;
+    throw wrapped;
+  }
   await ensureUserUids(users);
   await ensureUserDefaults(users);
   return users;
@@ -367,7 +388,7 @@ router.post('/login', async (req, res) => {
       token,
       tokenExpiresAt: expiresAt,
       lastLoginAt: new Date().toISOString(),
-      online: true,
+      online: false,
     };
     await writeUsers(users);
 

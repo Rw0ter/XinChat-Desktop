@@ -514,6 +514,9 @@ const outgoingRequests = ref([]);
 const showSendMenu = ref(false);
 let wsReconnectTimer = null;
 let wsReconnectAttempts = 0;
+let wsHeartbeatTimer = null;
+const HEARTBEAT_INTERVAL_MS = 15000;
+const pendingPresence = new Map();
 let messageIdSet = new Set();
 const lastFriendSignature = ref('');
 const lastMessageSignature = ref('');
@@ -666,6 +669,10 @@ const closeWebSocket = () => {
         clearTimeout(wsReconnectTimer);
         wsReconnectTimer = null;
     }
+    if (wsHeartbeatTimer) {
+        clearInterval(wsHeartbeatTimer);
+        wsHeartbeatTimer = null;
+    }
     if (wsRef.value) {
         wsRef.value.onopen = null;
         wsRef.value.onclose = null;
@@ -707,6 +714,14 @@ const handleWsMessage = (payload) => {
         loadFriends({ silent: true });
         return;
     }
+    if (message.type === 'presence' && message.data) {
+        applyPresenceUpdate(message.data);
+        return;
+    }
+    if (message.type === 'presence_snapshot' && Array.isArray(message.data)) {
+        message.data.forEach((entry) => applyPresenceUpdate(entry));
+        return;
+    }
     if (message.type !== 'chat' || !message.data) {
         return;
     }
@@ -745,6 +760,14 @@ const connectWebSocket = () => {
     wsRef.value = ws;
     ws.onopen = () => {
         wsReconnectAttempts = 0;
+        wsHeartbeatTimer = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'heartbeat' }));
+            }
+        }, HEARTBEAT_INTERVAL_MS);
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'heartbeat' }));
+        }
         loadFriends({ silent: true });
         loadRequests({ silent: true });
     };
@@ -753,6 +776,10 @@ const connectWebSocket = () => {
         scheduleReconnect();
     };
     ws.onclose = () => {
+        if (wsHeartbeatTimer) {
+            clearInterval(wsHeartbeatTimer);
+            wsHeartbeatTimer = null;
+        }
         scheduleReconnect();
     };
 };
@@ -987,6 +1014,25 @@ const buildFriendSignature = (items) => {
         .join('|');
 };
 
+const applyPresenceUpdate = (entry) => {
+    const uid = Number(entry?.uid);
+    if (!Number.isInteger(uid)) return;
+    const online = entry?.online === true;
+    const index = friends.value.findIndex((item) => item.uid === uid);
+    if (index === -1) {
+        pendingPresence.set(uid, online);
+        return;
+    }
+    if (friends.value[index].online === online) return;
+    const next = friends.value.slice();
+    next[index] = { ...next[index], online };
+    friends.value = next;
+    lastFriendSignature.value = buildFriendSignature(next);
+    if (activeFriend.value?.uid === uid) {
+        activeFriend.value = next[index];
+    }
+};
+
 const buildMessageSignature = (items) => {
     if (!items.length) return '';
     const last = items[items.length - 1];
@@ -1004,6 +1050,14 @@ const loadFriends = async ({ silent } = {}) => {
         const data = await res.json();
         if (res.ok && data?.success) {
             const next = data.friends || [];
+            if (pendingPresence.size) {
+                next.forEach((item) => {
+                    if (pendingPresence.has(item.uid)) {
+                        item.online = pendingPresence.get(item.uid) === true;
+                    }
+                });
+                pendingPresence.clear();
+            }
             const signature = buildFriendSignature(next);
             if (signature !== lastFriendSignature.value) {
                 friends.value = next;

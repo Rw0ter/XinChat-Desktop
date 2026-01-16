@@ -1,5 +1,6 @@
 import express from 'express';
 import { readUsers, writeUsers } from './auth.js';
+import { isUserOnline as isOnline } from '../online.js';
 
 const router = express.Router();
 
@@ -17,34 +18,39 @@ const extractToken = (req) => {
 };
 
 const authenticate = async (req, res, next) => {
-  const token = extractToken(req);
-  if (!token) {
-    res.status(401).json({ success: false, message: 'Missing token.' });
-    return;
-  }
+  try {
+    const token = extractToken(req);
+    if (!token) {
+      res.status(401).json({ success: false, message: 'Missing token.' });
+      return;
+    }
 
-  const users = await readUsers();
-  const userIndex = users.findIndex((user) => user.token === token);
-  if (userIndex === -1) {
-    res.status(401).json({ success: false, message: 'Invalid token.' });
-    return;
-  }
+    const users = await readUsers();
+    const userIndex = users.findIndex((user) => user.token === token);
+    if (userIndex === -1) {
+      res.status(401).json({ success: false, message: 'Invalid token.' });
+      return;
+    }
 
-  const user = users[userIndex];
-  const expiresAt = user.tokenExpiresAt ? Date.parse(user.tokenExpiresAt) : 0;
-  if (!expiresAt || Number.isNaN(expiresAt) || Date.now() > expiresAt) {
-    users[userIndex] = {
-      ...user,
-      token: null,
-      tokenExpiresAt: null,
-    };
-    await writeUsers(users);
-    res.status(401).json({ success: false, message: 'Token expired.' });
-    return;
-  }
+    const user = users[userIndex];
+    const expiresAt = user.tokenExpiresAt ? Date.parse(user.tokenExpiresAt) : 0;
+    if (!expiresAt || Number.isNaN(expiresAt) || Date.now() > expiresAt) {
+      users[userIndex] = {
+        ...user,
+        token: null,
+        tokenExpiresAt: null,
+      };
+      await writeUsers(users);
+      res.status(401).json({ success: false, message: 'Token expired.' });
+      return;
+    }
 
-  req.auth = { user, userIndex, users };
-  next();
+    req.auth = { user, userIndex, users };
+    next();
+  } catch (error) {
+    console.error('Friends authenticate error:', error);
+    res.status(500).json({ success: false, message: 'Server error.' });
+  }
 };
 
 const resolveFriend = (users, payload = {}) => {
@@ -60,7 +66,7 @@ const resolveFriend = (users, payload = {}) => {
 };
 
 const isUserOnline = (user) => {
-  if (!user?.online) return false;
+  if (!isOnline(user)) return false;
   if (!user?.token) return false;
   const expiresAt = user.tokenExpiresAt ? Date.parse(user.tokenExpiresAt) : 0;
   if (!expiresAt || Number.isNaN(expiresAt)) return false;
