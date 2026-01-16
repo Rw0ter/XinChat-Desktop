@@ -621,12 +621,77 @@ const scheduleHideProfile = () => {
     }, 120);
 };
 
-watch(
-    () => editForm.value.country,
-    (next, prev) => {
-        if (next !== prev) {
-            editForm.value.province = '';
-            editForm.value.region = '';
+const buildWsUrl = () => {
+    const base = new URL(API_BASE);
+    base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+    base.pathname = '/ws';
+    base.searchParams.set('token', auth.value.token || '');
+    return base.toString();
+};
+
+const closeWebSocket = () => {
+    if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    }
+    if (wsRef.value) {
+        wsRef.value.onopen = null;
+        wsRef.value.onclose = null;
+        wsRef.value.onmessage = null;
+        wsRef.value.onerror = null;
+        wsRef.value.close();
+        wsRef.value = null;
+    }
+};
+
+const scheduleReconnect = () => {
+    if (wsReconnectTimer || !auth.value.token) {
+        return;
+    }
+    const delay = Math.min(1000 * 2 ** wsReconnectAttempts, 15000);
+    wsReconnectAttempts += 1;
+    wsReconnectTimer = setTimeout(() => {
+        wsReconnectTimer = null;
+        connectWebSocket();
+    }, delay);
+};
+
+const handleWsMessage = (payload) => {
+    let message = null;
+    try {
+        message = JSON.parse(payload);
+    } catch {
+        return;
+    }
+    if (!message?.type) {
+        return;
+    }
+    if (message.type === 'friends') {
+        loadFriends({ silent: true });
+        return;
+    }
+    if (message.type === 'requests') {
+        loadRequests({ silent: true });
+        return;
+    }
+    if (message.type !== 'chat' || !message.data) {
+        return;
+    }
+    const entry = message.data;
+    if (!entry.id || messageIdSet.has(entry.id)) {
+        return;
+    }
+    const activeUid = activeFriend.value?.uid;
+    if (
+        entry.targetType === 'private' &&
+        activeUid &&
+        ((entry.senderUid === auth.value.uid && entry.targetUid === activeUid) ||
+            (entry.senderUid === activeUid && entry.targetUid === auth.value.uid))
+    ) {
+        messageIdSet.add(entry.id);
+        messages.value = [...messages.value, entry];
+        if (entry.senderUid !== auth.value.uid) {
+            playNotifySound();
         }
     }
 );

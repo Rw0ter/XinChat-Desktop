@@ -1,9 +1,10 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import authRouter, { ensureStorage } from './routes/auth.js';
-import chatRouter, { ensureChatStorage } from './routes/chat.js';
-import friendsRouter from './routes/friends.js';
+import { WebSocket, WebSocketServer } from 'ws';
+import authRouter, { ensureStorage, readUsers, writeUsers } from './routes/auth.js';
+import chatRouter, { ensureChatStorage, setChatNotifier } from './routes/chat.js';
+import friendsRouter, { setFriendsNotifier } from './routes/friends.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -355,7 +356,88 @@ app.use('/api/chat', chatRouter);
 app.use('/api/friends', friendsRouter);
 
 export function startServer(port = PORT) {
-  return app.listen(port, async () => {
+  const server = http.createServer(app);
+  const wss = new WebSocketServer({ server, path: '/ws' });
+  const connections = new Map();
+
+  const addConnection = (uid, socket) => {
+    const set = connections.get(uid) || new Set();
+    set.add(socket);
+    connections.set(uid, set);
+  };
+
+  const removeConnection = (uid, socket) => {
+    const set = connections.get(uid);
+    if (!set) return;
+    set.delete(socket);
+    if (set.size === 0) {
+      connections.delete(uid);
+    }
+  };
+
+  const sendToUid = (uid, payload) => {
+    const set = connections.get(uid);
+    if (!set) return;
+    const message = JSON.stringify(payload);
+    set.forEach((socket) => {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(message);
+      }
+    });
+  };
+
+  const verifyToken = async (token) => {
+    if (!token) return null;
+    const users = await readUsers();
+    const userIndex = users.findIndex((user) => user.token === token);
+    if (userIndex === -1) {
+      return null;
+    }
+    const user = users[userIndex];
+    const expiresAt = user.tokenExpiresAt ? Date.parse(user.tokenExpiresAt) : 0;
+    if (!expiresAt || Number.isNaN(expiresAt) || Date.now() > expiresAt) {
+      users[userIndex] = {
+        ...user,
+        token: null,
+        tokenExpiresAt: null,
+      };
+      await writeUsers(users);
+      return null;
+    }
+    return user;
+  };
+
+  wss.on('connection', async (socket, req) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const token = url.searchParams.get('token') || '';
+      const user = await verifyToken(token);
+      if (!user) {
+        socket.close(1008, 'Unauthorized');
+        return;
+      }
+      socket._uid = user.uid;
+      addConnection(user.uid, socket);
+      socket.send(JSON.stringify({ type: 'ready', uid: user.uid }));
+      socket.on('close', () => removeConnection(user.uid, socket));
+      socket.on('error', () => removeConnection(user.uid, socket));
+    } catch {
+      socket.close(1011, 'Server error');
+    }
+  });
+
+  setChatNotifier((entry) => {
+    const payload = { type: 'chat', data: entry };
+    sendToUid(entry.senderUid, payload);
+    if (entry.targetType === 'private') {
+      sendToUid(entry.targetUid, payload);
+    }
+  });
+  setFriendsNotifier((uids, payload) => {
+    uids.forEach((uid) => sendToUid(uid, payload));
+  });
+
+  return server.listen(port, async () => {
     await Promise.all([ensureStorage(), ensureChatStorage()]);
     console.log(`Backend listening on http://localhost:${port}`);
   });
