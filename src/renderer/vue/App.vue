@@ -223,21 +223,48 @@
                 <template v-if="activeView === 'chat'">
                     <div class="chat-panel">
                         <div class="chat-header">
-                        <div>
-                            <div class="chat-title">
-                                {{ activeFriend?.username || '选择一个联系人' }}
+                            <div>
+                                <div
+                                    class="chat-title"
+                                    :class="{ clickable: activeFriend }"
+                                    @click.stop="toggleFriendProfile"
+                                >
+                                    {{ activeFriend?.username || '选择一个联系人' }}
+                                </div>
+                                <div class="chat-sub">
+                                    {{ activeFriend ? `私聊 · UID ${activeFriend.uid}` : '等待选择聊天对象' }}
+                                </div>
                             </div>
-                            <div class="chat-sub">
-                                {{ activeFriend ? `私聊 · UID ${activeFriend.uid}` : '等待选择聊天对象' }}
+                            <div class="chat-actions">
+                                <span class="chip">private</span>
+                                <span class="chip" :class="{ offline: !activeFriendOnline }">
+                                    {{ activeFriendOnline ? 'online' : 'offline' }}
+                                </span>
+                            </div>
+                            <div
+                                v-if="activeFriend"
+                                ref="friendProfileRef"
+                                class="friend-profile-popover"
+                                :class="{ 'is-visible': isFriendProfileVisible }"
+                                @click.stop
+                            >
+                                <div class="profile-head">
+                                    <div class="profile-avatar">{{ friendInitials }}</div>
+                                    <div class="profile-meta">
+                                        <div class="profile-name">{{ friendDisplayName }}</div>
+                                        <div class="profile-uid">UID {{ friendProfileSource?.uid || '---' }}</div>
+                                        <div class="profile-signature">{{ friendSignature }}</div>
+                                        <div class="profile-details">
+                                            <div class="profile-detail">性别：{{ friendProfileSource?.gender || '未设置' }}</div>
+                                            <div class="profile-detail">生日：{{ friendProfileSource?.birthday || '未设置' }}</div>
+                                            <div class="profile-detail">
+                                                城市：{{ friendProfileSource?.country || '未设置' }}{{ friendProfileSource?.province ? ` / ${friendProfileSource?.province}` : '' }}{{ friendProfileSource?.region ? ` / ${friendProfileSource?.region}` : '' }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                         <div class="chat-actions">
-                        <span class="chip">private</span>
-                        <span class="chip" :class="{ offline: !activeFriendOnline }">
-                            {{ activeFriendOnline ? 'online' : 'offline' }}
-                        </span>
-                    </div>
-                    </div>
                      <div class="chat-body" ref="chatBodyRef">
                         <div v-if="loading" class="loading">加载中...</div>
                         <div v-else-if="!messages.length" class="empty-chat">
@@ -512,6 +539,10 @@ const contactsNoticeType = ref('friend');
 const incomingRequests = ref([]);
 const outgoingRequests = ref([]);
 const showSendMenu = ref(false);
+const isFriendProfileVisible = ref(false);
+const friendProfileRef = ref(null);
+const friendProfile = ref(null);
+const friendProfileLoading = ref(false);
 let wsReconnectTimer = null;
 let wsReconnectAttempts = 0;
 let wsHeartbeatTimer = null;
@@ -656,6 +687,14 @@ watch(
         }
     }
 );
+
+watch(
+    () => activeFriend.value?.uid,
+    () => {
+        isFriendProfileVisible.value = false;
+        friendProfile.value = null;
+    }
+);
 const buildWsUrl = () => {
     const base = new URL(API_BASE);
     base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -791,9 +830,16 @@ const toggleSendMenu = () => {
     showSendMenu.value = !showSendMenu.value;
 };
 
-const handleDocumentClick = () => {
+const handleDocumentClick = (event) => {
     if (showSendMenu.value) {
         showSendMenu.value = false;
+    }
+    if (
+        isFriendProfileVisible.value &&
+        friendProfileRef.value &&
+        !friendProfileRef.value.contains(event.target)
+    ) {
+        isFriendProfileVisible.value = false;
     }
 };
 
@@ -809,6 +855,27 @@ const initials = computed(() => {
 const signature = computed(() => {
     return auth.value.signature || '这个人很神秘，暂未填写签名';
 });
+
+const friendDisplayName = computed(() => {
+    if (!friendProfileSource.value) return '';
+    return (
+        friendProfileSource.value.nickname ||
+        friendProfileSource.value.username ||
+        `用户${friendProfileSource.value.uid || ''}`
+    );
+});
+
+const friendInitials = computed(() => {
+    const base =
+        friendProfileSource.value?.username || friendDisplayName.value || '??';
+    return String(base).slice(0, 2).toUpperCase();
+});
+
+const friendSignature = computed(() => {
+    return friendProfileSource.value?.signature || '这个人很神秘，暂未填写签名';
+});
+
+const friendProfileSource = computed(() => friendProfile.value || activeFriend.value);
 
 const nicknameCount = computed(() => editForm.value.nickname.length);
 const signatureCount = computed(() => editForm.value.signature.length);
@@ -1199,6 +1266,34 @@ const scrollToBottom = () => {
     const el = chatBodyRef.value;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
+};
+
+const toggleFriendProfile = () => {
+    if (!activeFriend.value) return;
+    if (!isFriendProfileVisible.value) {
+        loadFriendProfile(activeFriend.value.uid);
+    }
+    isFriendProfileVisible.value = !isFriendProfileVisible.value;
+};
+
+const closeFriendProfile = () => {
+    isFriendProfileVisible.value = false;
+};
+
+const loadFriendProfile = async (uid) => {
+    if (!auth.value.token || !uid) return;
+    if (friendProfileLoading.value && friendProfile.value?.uid === uid) return;
+    friendProfileLoading.value = true;
+    try {
+        const res = await fetch(`${API_BASE}/api/friends/profile?uid=${uid}`, {
+            headers: authHeader()
+        });
+        const data = await res.json();
+        if (res.ok && data?.success && data.user) {
+            friendProfile.value = data.user;
+        }
+    } catch {}
+    friendProfileLoading.value = false;
 };
 
 const scheduleScrollToBottom = () => {
@@ -2246,6 +2341,7 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    position: relative;
 }
 
 .app-shell.app-enter .sidebar,
@@ -2257,6 +2353,14 @@ onBeforeUnmount(() => {
 .chat-title {
     font-size: 18px;
     font-weight: 700;
+}
+
+.chat-title.clickable {
+    cursor: pointer;
+}
+
+.chat-title.clickable:hover {
+    color: #1d4ed8;
 }
 
 .chat-sub {
@@ -2283,6 +2387,29 @@ onBeforeUnmount(() => {
 .chip.offline {
     background: rgba(148, 163, 184, 0.2);
     color: #64748b;
+}
+
+.friend-profile-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 22px;
+    width: 320px;
+    background: linear-gradient(145deg, #ffffff, #f2f5fb);
+    border-radius: 18px;
+    padding: 16px;
+    box-shadow: 0 18px 48px rgba(22, 32, 52, 0.16);
+    border: 1px solid rgba(31, 65, 120, 0.12);
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 180ms ease, transform 220ms ease;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.friend-profile-popover.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
 }
 
 .chat-body {

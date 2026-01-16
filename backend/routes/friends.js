@@ -427,5 +427,47 @@ router.get('/search', authenticate, async (req, res) => {
   });
 });
 
+router.get('/profile', authenticate, async (req, res) => {
+  const { users, user } = req.auth;
+  const uid = Number(req.query?.uid);
+  if (!Number.isInteger(uid)) {
+    res.status(400).json({ success: false, message: 'Invalid uid.' });
+    return;
+  }
+
+  const target = users.find((item) => item.uid === uid);
+  if (!target) {
+    res.status(404).json({ success: false, message: 'User not found.' });
+    return;
+  }
+
+  const isMutual =
+    Array.isArray(user.friends) &&
+    user.friends.includes(uid) &&
+    Array.isArray(target.friends) &&
+    target.friends.includes(user.uid);
+  if (!isMutual) {
+    res.status(403).json({ success: false, message: 'Not mutual friends.' });
+    return;
+  }
+
+  res.json({
+    success: true,
+    user: {
+      uid: target.uid,
+      username: target.username,
+      nickname: target.nickname || target.username,
+      signature: target.signature || '',
+      gender: target.gender || '',
+      birthday: target.birthday || '',
+      country: target.country || '',
+      province: target.province || '',
+      region: target.region || '',
+      avatar: target.avatar || '',
+      online: isUserOnline(target),
+    },
+  });
+});
+
 export { setFriendsNotifier };
 export default router;
