@@ -24,6 +24,7 @@ let authRegion = null;
 let loginWin = null;
 let mainWin = null;
 let foundFriendWin = null;
+const flashTimers = new WeakMap();
 const isDev = process.env.VITE_DEV_SERVER_URL ? true : false;
 
 const getRendererPath = (page) => {
@@ -284,6 +285,32 @@ const getSenderWindow = (event) => {
     return BrowserWindow.fromWebContents(event.sender);
 };
 
+const triggerWindowFlash = (targetWindow) => {
+    if (!targetWindow || targetWindow.isDestroyed()) return;
+    targetWindow.flashFrame(true);
+    const existing = flashTimers.get(targetWindow);
+    if (existing) {
+        clearTimeout(existing);
+    }
+    const timer = setTimeout(() => {
+        if (targetWindow && !targetWindow.isDestroyed()) {
+            targetWindow.flashFrame(false);
+        }
+        flashTimers.delete(targetWindow);
+    }, 10000);
+    flashTimers.set(targetWindow, timer);
+    targetWindow.once('focus', () => {
+        const pending = flashTimers.get(targetWindow);
+        if (pending) {
+            clearTimeout(pending);
+            flashTimers.delete(targetWindow);
+        }
+        if (!targetWindow.isDestroyed()) {
+            targetWindow.flashFrame(false);
+        }
+    });
+};
+
 ipcMain.on('window-close', (event) => {
     const target = getSenderWindow(event);
     if (target && !target.isDestroyed()) {
@@ -304,6 +331,11 @@ ipcMain.on('window-max', (event) => {
     } else {
         target.maximize();
     }
+});
+
+ipcMain.on('window-flash', (event) => {
+    const target = getSenderWindow(event);
+    triggerWindowFlash(target);
 });
 
 app.whenReady().then(createLoginWindow);

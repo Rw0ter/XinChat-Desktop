@@ -14,5 +14,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openFoundFriend: () => ipcRenderer.send('open-found-friend'),
     windowClose: () => ipcRenderer.send('window-close'),
     windowMin: () => ipcRenderer.send('window-min'),
-    windowMax: () => ipcRenderer.send('window-max')
+    windowMax: () => ipcRenderer.send('window-max'),
+    windowFlash: () => ipcRenderer.send('window-flash')
 });

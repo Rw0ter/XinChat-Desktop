@@ -606,6 +606,7 @@ const handleMin = () => window.electronAPI?.windowMin?.();
 const handleMax = () => window.electronAPI?.windowMax?.();
 const handleClose = () => window.electronAPI?.windowClose?.();
 const openFoundFriend = () => window.electronAPI?.openFoundFriend?.();
+const flashWindow = () => window.electronAPI?.windowFlash?.();
 let profileHideTimer = null;
 const editForm = ref({
     nickname: '',
@@ -823,14 +824,11 @@ const handleWsMessage = (payload) => {
         return;
     }
     messageIdSet.add(entry.id);
-    const activeUid = activeFriend.value?.uid;
-    if (
-        entry.targetType === 'private' &&
-        entry.senderUid !== auth.value.uid &&
-        (!activeUid || entry.senderUid !== activeUid)
-    ) {
+    if (entry.senderUid !== auth.value.uid) {
         playNotifySound();
+        flashWindow();
     }
+    const activeUid = activeFriend.value?.uid;
     if (
         entry.targetType === 'private' &&
         activeUid &&
