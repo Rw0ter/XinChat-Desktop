@@ -2656,6 +2656,7 @@ onBeforeUnmount(() => {
 .chat-sub {
     font-size: 12px;
     color: var(--ink-soft);
+    user-select: none;
 }
 
 .chat-actions {
