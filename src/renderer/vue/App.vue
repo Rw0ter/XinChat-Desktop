@@ -11,20 +11,13 @@
             <div class="topbar-center">
                 <div class="status-pill">{{ statusText }}</div>
             </div>
-            
+
             <div class="topbar-right">
                 <div class="topbar-right-controls">
                     <div class="topbar-right-spacer"></div>
                     <div class="user-card-wrap">
-                        <div
-                            class="user-card"
-                            @mouseenter="showProfile"
-                            @mouseleave="scheduleHideProfile"
-                        >
-                            <div
-                                class="user-avatar user-avatar-trigger"
-                                @mouseenter="showProfile"
-                            >
+                        <div class="user-card" @mouseenter="showProfile" @mouseleave="scheduleHideProfile">
+                            <div class="user-avatar user-avatar-trigger" @mouseenter="showProfile">
                                 <img v-if="auth.avatar" :src="auth.avatar" alt="avatar" />
                                 <span v-else>{{ initials }}</span>
                             </div>
@@ -33,12 +26,8 @@
                                 <div class="user-id">UID {{ auth.uid || '---' }}</div>
                             </div>
                         </div>
-                        <div
-                            class="profile-popover"
-                            :class="{ 'is-visible': isProfileVisible }"
-                            @mouseenter="showProfile"
-                            @mouseleave="hideProfile"
-                        >
+                        <div class="profile-popover" :class="{ 'is-visible': isProfileVisible }"
+                            @mouseenter="showProfile" @mouseleave="hideProfile">
                             <div class="profile-head">
                                 <div class="profile-avatar">
                                     <img v-if="auth.avatar" :src="auth.avatar" alt="avatar" />
@@ -52,7 +41,8 @@
                                         <div class="profile-detail">性别：{{ auth.gender || '未设置' }}</div>
                                         <div class="profile-detail">生日：{{ auth.birthday || '未设置' }}</div>
                                         <div class="profile-detail">
-                                            城市：{{ auth.country || '未设置' }}{{ auth.province ? ` / ${auth.province}` : '' }}{{ auth.region ? ` / ${auth.region}` : '' }}
+                                            城市：{{ auth.country || '未设置' }}{{ auth.province ? ` / ${auth.province}` : ''
+                                            }}{{ auth.region ? ` / ${auth.region}` : '' }}
                                         </div>
                                     </div>
                                 </div>
@@ -83,21 +73,13 @@
         <main class="layout">
             <aside class="icon-rail">
                 <div class="rail-section">
-                    <button
-                        class="rail-btn"
-                        :class="{ active: activeView === 'chat' }"
-                        title="消息"
-                        @click="activeView = 'chat'"
-                    >
+                    <button class="rail-btn" :class="{ active: activeView === 'chat' }" title="消息"
+                        @click="activeView = 'chat'">
                         <span class="rail-icon">&#xE8BD;</span>
                         <span class="rail-badge">99+</span>
                     </button>
-                    <button
-                        class="rail-btn"
-                        :class="{ active: activeView === 'contacts' }"
-                        title="联系人"
-                        @click="openContacts"
-                    >
+                    <button class="rail-btn" :class="{ active: activeView === 'contacts' }" title="联系人"
+                        @click="openContacts">
                         <span class="rail-icon">&#xE77B;</span>
                         <span class="rail-dot"></span>
                     </button>
@@ -137,13 +119,8 @@
                     </div>
                     <div class="list">
                         <div class="section-title">私聊列表</div>
-                        <button
-                            v-for="friend in filteredFriends"
-                            :key="friend.uid"
-                            class="list-item"
-                            :class="{ active: activeFriend?.uid === friend.uid }"
-                            @click="selectFriend(friend)"
-                        >
+                        <button v-for="friend in filteredFriends" :key="friend.uid" class="list-item"
+                            :class="{ active: activeFriend?.uid === friend.uid }" @click="selectFriend(friend)">
                             <div class="avatar">
                                 <img v-if="friend.avatar" :src="friend.avatar" alt="avatar" />
                                 <span v-else>{{ friend.username?.slice(0, 2).toUpperCase() }}</span>
@@ -171,19 +148,13 @@
                         </button>
                     </div>
                     <div class="contacts-section">
-                        <button
-                            class="contacts-item"
-                            :class="{ active: contactsNoticeType === 'friend' }"
-                            @click="contactsNoticeType = 'friend'"
-                        >
+                        <button class="contacts-item" :class="{ active: contactsNoticeType === 'friend' }"
+                            @click="contactsNoticeType = 'friend'">
                             <span>好友通知</span>
                             <span class="chev">&#xE76C;</span>
                         </button>
-                        <button
-                            class="contacts-item"
-                            :class="{ active: contactsNoticeType === 'group' }"
-                            @click="contactsNoticeType = 'group'"
-                        >
+                        <button class="contacts-item" :class="{ active: contactsNoticeType === 'group' }"
+                            @click="contactsNoticeType = 'group'">
                             <span>群通知</span>
                             <span class="badge">2</span>
                             <span class="chev">&#xE76C;</span>
@@ -235,11 +206,8 @@
                     <div class="chat-panel">
                         <div class="chat-header">
                             <div>
-                                <div
-                                    class="chat-title"
-                                    :class="{ clickable: activeFriend }"
-                                    @click.stop="toggleFriendProfile"
-                                >
+                                <div class="chat-title" :class="{ clickable: activeFriend }"
+                                    @click.stop="toggleFriendProfile">
                                     {{ activeFriend?.username || '选择一个联系人' }}
                                 </div>
                                 <div class="chat-sub">
@@ -252,16 +220,12 @@
                                     {{ activeFriendOnline ? 'online' : 'offline' }}
                                 </span>
                             </div>
-                            <div
-                                v-if="activeFriend"
-                                ref="friendProfileRef"
-                                class="friend-profile-popover"
-                                :class="{ 'is-visible': isFriendProfileVisible }"
-                                @click.stop
-                            >
+                            <div v-if="activeFriend" ref="friendProfileRef" class="friend-profile-popover"
+                                :class="{ 'is-visible': isFriendProfileVisible }" @click.stop>
                                 <div class="profile-head">
                                     <div class="profile-avatar">
-                                        <img v-if="friendProfileSource?.avatar" :src="friendProfileSource?.avatar" alt="avatar" />
+                                        <img v-if="friendProfileSource?.avatar" :src="friendProfileSource?.avatar"
+                                            alt="avatar" />
                                         <span v-else>{{ friendInitials }}</span>
                                     </div>
                                     <div class="profile-meta">
@@ -269,97 +233,73 @@
                                         <div class="profile-uid">UID {{ friendProfileSource?.uid || '---' }}</div>
                                         <div class="profile-signature">{{ friendSignature }}</div>
                                         <div class="profile-details">
-                                            <div class="profile-detail">性别：{{ friendProfileSource?.gender || '未设置' }}</div>
-                                            <div class="profile-detail">生日：{{ friendProfileSource?.birthday || '未设置' }}</div>
+                                            <div class="profile-detail">性别：{{ friendProfileSource?.gender || '未设置' }}
+                                            </div>
+                                            <div class="profile-detail">生日：{{ friendProfileSource?.birthday || '未设置' }}
+                                            </div>
                                             <div class="profile-detail">
-                                                城市：{{ friendProfileSource?.country || '未设置' }}{{ friendProfileSource?.province ? ` / ${friendProfileSource?.province}` : '' }}{{ friendProfileSource?.region ? ` / ${friendProfileSource?.region}` : '' }}
+                                                城市：{{ friendProfileSource?.country || '未设置' }}{{
+                                                    friendProfileSource?.province ? ` / ${friendProfileSource?.province}` :
+                                                '' }}{{ friendProfileSource?.region ? ` /
+                                                ${friendProfileSource?.region}` : '' }}
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                     <div class="chat-body" ref="chatBodyRef">
-                        <div v-if="loading" class="loading">加载中...</div>
-                        <div v-else-if="!messages.length" class="empty-chat">
-                            还没有聊天记录，打个招呼吧。
-                        </div>
-                        <div v-else class="bubble-list">
-                            <div
-                                v-for="msg in displayMessages"
-                                :key="msg.id"
-                                class="bubble"
-                                :class="{
+                        <div class="chat-body" ref="chatBodyRef">
+                            <div v-if="loading" class="loading">加载中...</div>
+                            <div v-else-if="!messages.length" class="empty-chat">
+                                还没有聊天记录，打个招呼吧。
+                            </div>
+                            <div v-else class="bubble-list">
+                                <div v-for="msg in displayMessages" :key="msg.id" class="bubble" :class="{
                                     self: msg.senderUid === auth.uid,
                                     error: msg.error,
                                     'image-only': isImageOnlyMessage(msg)
-                                }"
-                            >
-                                <span v-if="msg.error" class="bubble-error-dot"></span>
-                                <div class="bubble-name">
-                                    {{ msg.senderUid === auth.uid ? displayName : activeFriend?.username }}
+                                }">
+                                    <span v-if="msg.error" class="bubble-error-dot"></span>
+                                    <div class="bubble-name">
+                                        {{ msg.senderUid === auth.uid ? displayName : activeFriend?.username }}
+                                    </div>
+                                    <div class="bubble-text">
+                                        <img v-if="msg.type === 'image' && getMessageImageUrl(msg)" class="bubble-image"
+                                            :src="getMessageImageUrl(msg)" alt="image"
+                                            @dblclick.stop="openImagePreview(getMessageImageUrl(msg))" />
+                                        <template v-if="msg.type === 'image'">
+                                            <div v-if="getMessageImageCaption(msg)" class="bubble-caption">
+                                                {{ getMessageImageCaption(msg) }}
+                                            </div>
+                                        </template>
+                                        <span v-else>{{ renderMessage(msg) }}</span>
+                                    </div>
+                                    <div class="bubble-time">{{ formatTime(msg.createdAt) }}</div>
                                 </div>
-                                <div class="bubble-text">
-                                    <img
-                                        v-if="msg.type === 'image' && getMessageImageUrl(msg)"
-                                        class="bubble-image"
-                                        :src="getMessageImageUrl(msg)"
-                                        alt="image"
-                                        @dblclick.stop="openImagePreview(getMessageImageUrl(msg))"
-                                    />
-                                    <template v-if="msg.type === 'image'">
-                                        <div v-if="getMessageImageCaption(msg)" class="bubble-caption">
-                                            {{ getMessageImageCaption(msg) }}
-                                        </div>
-                                    </template>
-                                    <span v-else>{{ renderMessage(msg) }}</span>
-                                </div>
-                                <div class="bubble-time">{{ formatTime(msg.createdAt) }}</div>
                             </div>
                         </div>
-                    </div>
-                   
+
                     </div>
 
-                   
+
 
                     <div class="composer">
                         <div class="composer-toolbar">
-                            <button
-                                ref="emojiButtonRef"
-                                class="tool-icon-btn"
-                                :class="{ 'is-active': showEmojiPicker }"
-                                title="表情"
-                                @click.stop="toggleEmojiPicker"
-                            >
+                            <button ref="emojiButtonRef" class="tool-icon-btn" :class="{ 'is-active': showEmojiPicker }"
+                                title="表情" @click.stop="toggleEmojiPicker">
                                 <span class="tool-glyph">&#xE170;</span>
                             </button>
-                            <div
-                                v-if="showEmojiPicker"
-                                ref="emojiPickerRef"
-                                class="emoji-panel"
-                                @click.stop
-                            >
+                            <div v-if="showEmojiPicker" ref="emojiPickerRef" class="emoji-panel" @click.stop>
                                 <div class="emoji-tabs">
-                                    <button
-                                        v-for="tab in emojiTabs"
-                                        :key="tab.id"
-                                        class="emoji-tab"
-                                        :class="{ active: emojiTab === tab.id }"
-                                        type="button"
-                                        @click="emojiTab = tab.id"
-                                    >
+                                    <button v-for="tab in emojiTabs" :key="tab.id" class="emoji-tab"
+                                        :class="{ active: emojiTab === tab.id }" type="button"
+                                        @click="emojiTab = tab.id">
                                         {{ tab.label }}
                                     </button>
                                 </div>
                                 <div v-if="currentEmojiList.length" class="emoji-grid">
-                                    <button
-                                        v-for="item in currentEmojiList"
-                                        :key="`${emojiTab}-${item}`"
-                                        class="emoji-btn"
-                                        type="button"
-                                        @click="addEmoji(item)"
-                                    >
+                                    <button v-for="item in currentEmojiList" :key="`${emojiTab}-${item}`"
+                                        class="emoji-btn" type="button" @click="addEmoji(item)">
                                         {{ item }}
                                     </button>
                                 </div>
@@ -371,13 +311,8 @@
                             <button class="tool-icon-btn" title="文件">
                                 <span class="tool-glyph">&#xE8A5;</span>
                             </button>
-                            <input
-                                ref="imageInputRef"
-                                class="composer-image-input"
-                                type="file"
-                                accept="image/*"
-                                @change="handleImageSelect"
-                            />
+                            <input ref="imageInputRef" class="composer-image-input" type="file" accept="image/*"
+                                @change="handleImageSelect" />
                             <button class="tool-icon-btn" title="图片" @click="triggerImageSelect">
                                 <span class="tool-glyph">&#xEB9F;</span>
                             </button>
@@ -396,14 +331,9 @@
                             <img :src="draftImage" alt="preview" />
                             <button class="preview-remove" type="button" @click="clearDraftImage">×</button>
                         </div>
-                        <textarea
-                            v-model="draft"
-                            ref="composerTextareaRef"
-                            placeholder=""
-                            @keydown.enter.exact.prevent="sendMessage"
-                            @keydown.enter.shift.stop
-                            @paste="handleComposerPaste"
-                        ></textarea>
+                        <textarea v-model="draft" ref="composerTextareaRef" placeholder=""
+                            @keydown.enter.exact.prevent="sendMessage" @keydown.enter.shift.stop
+                            @paste="handleComposerPaste"></textarea>
                         <div class="composer-actions">
                             <div class="send-group">
                                 <button class="send-btn" :disabled="!canSend" @click="sendMessage">
@@ -429,7 +359,7 @@
 
                 <div v-else class="contacts-panel">
                     <div class="contacts-header">
-                    <div class="contacts-title">{{ noticeTitle }}</div>
+                        <div class="contacts-title">{{ noticeTitle }}</div>
                         <div class="contacts-tools">
                             <button class="tool-btn" title="筛选">
                                 <span class="tool-icon">&#xE71C;</span>
@@ -503,97 +433,60 @@
                             <span v-else>{{ initials }}</span>
                         </div>
                         <div class="profile-modal__upload">
-                            <input
-                                ref="avatarInputRef"
-                                class="profile-modal__file"
-                                type="file"
-                                accept="image/*"
-                                @change="handleAvatarChange"
-                            />
+                            <input ref="avatarInputRef" class="profile-modal__file" type="file" accept="image/*"
+                                @change="handleAvatarChange" />
                             <button class="profile-btn ghost" type="button" @click="triggerAvatarSelect">
                                 上传头像
                             </button>
-                            <button
-                                v-if="editForm.avatar"
-                                class="profile-btn ghost"
-                                type="button"
-                                @click="clearAvatar"
-                            >
+                            <button v-if="editForm.avatar" class="profile-btn ghost" type="button" @click="clearAvatar">
                                 移除
                             </button>
                         </div>
 
-                    <label class="profile-field" :class="{ 'is-invalid': nicknameInvalid }">
-                        <span class="profile-field__label">昵称</span>
-                        <div class="profile-field__control">
-                            <input
-                                v-model.trim="editForm.nickname"
-                                type="text"
-                                maxlength="36"
-                                placeholder="请输入昵称"
-                            />
-                            <span class="profile-field__count">{{ nicknameCount }}/36</span>
-                        </div>
-                    </label>
-
-                    <label class="profile-field">
-                        <span class="profile-field__label">个签</span>
-                        <div class="profile-field__control">
-                            <input
-                                v-model.trim="editForm.signature"
-                                type="text"
-                                maxlength="80"
-                                placeholder="编辑个签，展示我的独特态度"
-                            />
-                            <span class="profile-field__count">{{ signatureCount }}/80</span>
-                        </div>
-                    </label>
-
-                    <label class="profile-field">
-                        <span class="profile-field__label">性别</span>
-                        <SelectField
-                            v-model="editForm.gender"
-                            :options="genderOptions"
-                            autoScroll
-                        />
-                    </label>
-
-                    <label class="profile-field">
-                        <span class="profile-field__label">生日</span>
-                        <DateSelect v-model="editForm.birthday" />
-                    </label>
-
-                    <label class="profile-field">
-                        <span class="profile-field__label">国家</span>
-                        <SelectField
-                            v-model="editForm.country"
-                            :options="countryOptions"
-                            autoScroll
-                        />
-                    </label>
-
-                    <div
-                        v-if="editForm.country === '中国'"
-                        class="profile-field profile-field--split"
-                    >
-                        <label>
-                            <span class="profile-field__label">省份</span>
-                        <SelectField
-                            v-model="editForm.province"
-                            :options="provinceOptions"
-                            autoScroll
-                        />
+                        <label class="profile-field" :class="{ 'is-invalid': nicknameInvalid }">
+                            <span class="profile-field__label">昵称</span>
+                            <div class="profile-field__control">
+                                <input v-model.trim="editForm.nickname" type="text" maxlength="36"
+                                    placeholder="请输入昵称" />
+                                <span class="profile-field__count">{{ nicknameCount }}/36</span>
+                            </div>
                         </label>
-                        <label>
-                            <span class="profile-field__label">城市</span>
-                            <SelectField
-                                v-model="editForm.region"
-                                :options="cityOptions"
-                                :disabled="!cityOptions.length"
-                                autoScroll
-                            />
+
+                        <label class="profile-field">
+                            <span class="profile-field__label">个签</span>
+                            <div class="profile-field__control">
+                                <input v-model.trim="editForm.signature" type="text" maxlength="80"
+                                    placeholder="编辑个签，展示我的独特态度" />
+                                <span class="profile-field__count">{{ signatureCount }}/80</span>
+                            </div>
                         </label>
-                    </div>
+
+                        <label class="profile-field">
+                            <span class="profile-field__label">性别</span>
+                            <SelectField v-model="editForm.gender" :options="genderOptions" autoScroll />
+                        </label>
+
+                        <label class="profile-field">
+                            <span class="profile-field__label">生日</span>
+                            <DateSelect v-model="editForm.birthday" />
+                        </label>
+
+                        <label class="profile-field">
+                            <span class="profile-field__label">国家</span>
+                            <SelectField v-model="editForm.country" :options="countryOptions" autoScroll />
+                        </label>
+
+                        <div v-if="editForm.country === '中国'" class="profile-field profile-field--split">
+                            <label>
+                                <span class="profile-field__label">省份</span>
+                                <SelectField v-model="editForm.province" :options="provinceOptions" autoScroll />
+                            </label>
+                            <label>
+                                <span class="profile-field__label">城市</span>
+                                <SelectField v-model="editForm.region" :options="cityOptions"
+                                    :disabled="!cityOptions.length" autoScroll />
+                            </label>
+                        </div>
                     </div>
                     <div class="profile-modal__footer">
                         <button class="profile-btn" type="button" @click="saveProfile">保存</button>
@@ -611,29 +504,14 @@
                         <button class="profile-modal__close" type="button" @click="closeCropper">×</button>
                     </div>
                     <div class="crop-modal__body">
-                        <div
-                            class="crop-frame"
-                            @pointerdown.prevent="startCropDrag"
-                        >
-                            <img
-                                v-if="cropSource"
-                                class="crop-image"
-                                :src="cropSource"
-                                :style="cropImageStyle"
-                                alt="crop"
-                                draggable="false"
-                            />
+                        <div class="crop-frame" @pointerdown.prevent="startCropDrag">
+                            <img v-if="cropSource" class="crop-image" :src="cropSource" :style="cropImageStyle"
+                                alt="crop" draggable="false" />
                         </div>
                         <div class="crop-controls">
                             <label class="crop-zoom">
                                 <span>缩放</span>
-                                <input
-                                    type="range"
-                                    min="1"
-                                    max="3"
-                                    step="0.01"
-                                    v-model.number="cropScale"
-                                />
+                                <input type="range" min="1" max="3" step="0.01" v-model.number="cropScale" />
                             </label>
                         </div>
                     </div>
@@ -2252,7 +2130,7 @@ onBeforeUnmount(() => {
     color: rgba(28, 36, 54, 0.65);
 }
 
-input:focus::placeholder{
+input:focus::placeholder {
     color: transparent;
 }
 
@@ -2620,7 +2498,7 @@ select:focus {
     display: grid;
     grid-template-columns: 70px 300px 1fr;
     gap: 0px;
-   padding: 17px 2px 0px;
+    padding: 17px 2px 0px;
     position: relative;
     z-index: 1;
 }
@@ -2633,6 +2511,7 @@ select:focus {
     justify-content: space-between;
     -webkit-app-region: no-drag;
     user-select: none;
+    max-height: 90vh;
 }
 
 .rail-section {
@@ -3186,7 +3065,7 @@ select:focus {
     gap: 8px;
     user-select: none;
     -webkit-app-region: drag;
-    
+
 }
 
 .chip {
@@ -3314,7 +3193,7 @@ select:focus {
     margin-top: 8px;
 }
 
-.serach_input_box{
+.serach_input_box {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -3467,7 +3346,7 @@ select:focus {
 .composer textarea::-webkit-scrollbar {
     display: none;
 }
-   
+
 
 
 .composer textarea:focus {
@@ -3559,7 +3438,7 @@ select:focus {
     width: 36px;
     height: 100%;
     border: none;
-        background: unset;
+    background: unset;
     color: #fff;
     cursor: pointer;
     display: grid;
@@ -3606,19 +3485,19 @@ select:focus {
     color: #64748b;
 }
 
-.serach_input{
+.serach_input {
     width: 80%;
-     border-radius: 8px;
+    border-radius: 8px;
 }
 
 
-.add_friend_icon{
+.add_friend_icon {
     width: 46px;
     height: 46px;
     border-radius: 8px;
     cursor: pointer;
     margin: 5px;
-        margin-left: 10px;
+    margin-left: 10px;
     color: #1d4ed8;
     background-color: #eaf2ff;
     border: 1px solid rgba(72, 147, 214, 0.4);
