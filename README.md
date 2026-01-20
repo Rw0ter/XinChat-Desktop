@@ -2,6 +2,8 @@
 
 Electron + Vite + Vue desktop chat app with a local Node/Express backend.
 
+❤love from DGITC (Dongguan Information Technology college)❤.
+
 ## Overview
 
 - Desktop UI: Electron + Vue 3
