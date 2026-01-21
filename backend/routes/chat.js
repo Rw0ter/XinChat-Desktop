@@ -9,6 +9,7 @@ import { findUserByToken, readUsers, writeUsers } from './auth.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, '..', 'data');
+const IMAGE_DIR = path.join(DATA_DIR, 'images');
 const CHAT_JSON_PATH = path.join(DATA_DIR, 'chat.json');
 const DB_PATH = path.join(DATA_DIR, 'chat.sqlite');
 const DB_TMP_PATH = path.join(DATA_DIR, 'chat.sqlite.tmp');
@@ -23,12 +24,45 @@ let chatNotifier = null;
 const isValidType = (value) => typeof value === 'string' && ALLOWED_TYPES.has(value);
 const isValidTargetType = (value) =>
   typeof value === 'string' && ALLOWED_TARGET_TYPES.has(value);
+const DATA_IMAGE_RE = /^data:(image\/(png|jpe?g|gif|webp));base64,/i;
 
 let sqlModule = null;
 let db = null;
 let flushTimer = null;
 let flushInFlight = false;
 let pendingFlush = false;
+
+const parseImageDataUrl = (value) => {
+  if (typeof value !== 'string') return null;
+  const match = value.match(DATA_IMAGE_RE);
+  if (!match) return null;
+  const mime = match[1].toLowerCase();
+  const ext = match[2].toLowerCase() === 'jpeg' ? 'jpg' : match[2].toLowerCase();
+  const base64 = value.slice(match[0].length);
+  if (!base64) return null;
+  try {
+    const buffer = Buffer.from(base64, 'base64');
+    if (!buffer.length) return null;
+    return { buffer, mime, ext };
+  } catch {
+    return null;
+  }
+};
+
+const storeImageBuffer = async (buffer, ext) => {
+  const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+  const filename = `${hash}.${ext}`;
+  const filePath = path.join(IMAGE_DIR, filename);
+  await fs.mkdir(IMAGE_DIR, { recursive: true });
+  try {
+    await fs.writeFile(filePath, buffer, { flag: 'wx' });
+  } catch (error) {
+    if (error?.code !== 'EEXIST') {
+      throw error;
+    }
+  }
+  return { filename, hash };
+};
 
 const getSqlModule = async () => {
   if (sqlModule) {
@@ -282,6 +316,25 @@ router.post('/send', authenticate, async (req, res) => {
     }
 
     const { type, senderUid: _, targetUid: __, targetType, ...data } = body;
+    const messageData = { ...data };
+    if (type === 'image') {
+      const rawUrl =
+        typeof messageData.url === 'string' ? messageData.url.trim() : '';
+      const fallbackUrl =
+        !rawUrl && typeof messageData.content === 'string'
+          ? messageData.content.trim()
+          : '';
+      const candidateUrl = rawUrl || fallbackUrl;
+      const parsed = parseImageDataUrl(candidateUrl);
+      if (parsed) {
+        const { filename } = await storeImageBuffer(parsed.buffer, parsed.ext);
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        messageData.url = `${baseUrl}/uploads/images/${filename}`;
+        if (!rawUrl && messageData.content === candidateUrl) {
+          delete messageData.content;
+        }
+      }
+    }
     const createdAt = new Date().toISOString();
     const createdAtMs = Date.now();
     const entry = {
@@ -290,7 +343,7 @@ router.post('/send', authenticate, async (req, res) => {
       senderUid,
       targetUid,
       targetType,
-      data,
+      data: messageData,
       createdAt,
     };
 

@@ -367,6 +367,7 @@ app.get('/api/routes', (req, res) => {
 });
 
 app.use('/resource', express.static(path.join(__dirname, 'resource')));
+app.use('/uploads/images', express.static(path.join(__dirname, 'data', 'images')));
 app.use('/admin', express.static(path.join(__dirname, 'index.html')));
 
 app.use('/api', authRouter);
