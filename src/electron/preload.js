@@ -22,5 +22,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     windowFlash: () => ipcRenderer.send('window-flash'),
     downloadFile: (payload) => ipcRenderer.invoke('download-file', payload),
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
-    checkDownloadedFile: (payload) => ipcRenderer.invoke('check-downloaded-file', payload)
+    checkDownloadedFile: (payload) => ipcRenderer.invoke('check-downloaded-file', payload),
+    openVoiceCall: (payload) => ipcRenderer.send('open-voice-call', payload),
+    closeVoiceCall: () => ipcRenderer.send('close-voice-call'),
+    forwardVoiceSignal: (payload) => ipcRenderer.send('voice-signal-in', payload),
+    sendVoiceSignalOut: (payload) => ipcRenderer.send('voice-signal-out', payload),
+    onVoiceSignalOut: (handler) => ipcRenderer.on('voice-signal-out', (_, payload) => handler(payload)),
+    onVoiceSignalIn: (handler) => ipcRenderer.on('voice-signal-in', (_, payload) => handler(payload)),
+    onVoiceCallInit: (handler) => ipcRenderer.on('voice-call-init', (_, payload) => handler(payload))
 });

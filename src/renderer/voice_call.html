@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Voice Call</title>
+        <style>
+            :root {
+                color-scheme: dark;
+                --bg: #101318;
+                --panel: #1f2430;
+                --ink: #f9fafb;
+                --muted: rgba(255, 255, 255, 0.6);
+                --accent: #2563eb;
+                --danger: #ef4444;
+                --line: rgba(255, 255, 255, 0.08);
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                margin: 0;
+                min-height: 100vh;
+                background: radial-gradient(circle at top left, #1b2030, #0f1117 55%);
+                color: var(--ink);
+                font-family: "Segoe UI", system-ui, sans-serif;
+                display: grid;
+                place-items: center;
+            }
+
+            .call {
+                width: min(320px, 90vw);
+                background: var(--panel);
+                border-radius: 18px;
+                padding: 18px 18px 16px;
+                border: 1px solid var(--line);
+                box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+                display: grid;
+                gap: 14px;
+                text-align: center;
+            }
+
+            .call__header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin: -18px -18px 6px;
+                padding: 10px 16px;
+                border-bottom: 1px solid var(--line);
+                -webkit-app-region: drag;
+            }
+
+            .call__header-title {
+                font-size: 13px;
+                font-weight: 600;
+                color: var(--muted);
+            }
+
+            .call__close {
+                border: none;
+                background: transparent;
+                color: var(--muted);
+                font-size: 18px;
+                cursor: pointer;
+                -webkit-app-region: no-drag;
+            }
+
+            .call__title {
+                font-size: 16px;
+                font-weight: 600;
+            }
+
+            .call__peer {
+                font-size: 14px;
+                color: var(--muted);
+            }
+
+            .call__status {
+                font-size: 13px;
+                color: var(--muted);
+            }
+
+            .call__devices {
+                display: grid;
+                gap: 8px;
+                text-align: left;
+            }
+
+            label {
+                font-size: 12px;
+                color: var(--muted);
+            }
+
+            select {
+                width: 100%;
+                border-radius: 10px;
+                border: 1px solid var(--line);
+                background: rgba(255, 255, 255, 0.06);
+                color: var(--ink);
+                padding: 8px 10px;
+            }
+
+            .call__actions {
+                display: flex;
+                justify-content: center;
+                gap: 10px;
+                flex-wrap: wrap;
+                -webkit-app-region: no-drag;
+            }
+
+            .btn {
+                border: none;
+                border-radius: 12px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                background: var(--accent);
+                color: #fff;
+            }
+
+            .btn.secondary {
+                background: rgba(255, 255, 255, 0.12);
+                color: #fff;
+            }
+
+            .btn.danger {
+                background: var(--danger);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="call">
+            <div class="call__header">
+                <div class="call__header-title">语音通话</div>
+                <button class="call__close" id="closeBtn" type="button">×</button>
+            </div>
+            <div class="call__peer" id="peerName">Waiting...</div>
+            <div class="call__status" id="statusText">Idle</div>
+            <div class="call__devices">
+                <label for="micSelect">麦克风</label>
+                <select id="micSelect"></select>
+                <label for="speakerSelect">扬声器</label>
+                <select id="speakerSelect"></select>
+            </div>
+            <div class="call__actions">
+                <button class="btn" id="acceptBtn" type="button">接听</button>
+                <button class="btn secondary" id="rejectBtn" type="button">拒绝</button>
+                <button class="btn danger" id="hangupBtn" type="button">挂断</button>
+            </div>
+        </div>
+        <audio id="remoteAudio" autoplay></audio>
+        <script type="module" src="/voice_call/main.js"></script>
+    </body>
+</html>

@@ -11,6 +11,7 @@ import authRouter, {
 } from './routes/auth.js';
 import chatRouter, { ensureChatStorage, setChatNotifier } from './routes/chat.js';
 import friendsRouter, { setFriendsNotifier } from './routes/friends.js';
+import voiceRouter from './routes/voice.js';
 import {
   markDisconnected,
   isUserOnline,
@@ -247,6 +248,45 @@ const routeMeta = [
   },
   {
     method: 'GET',
+    path: '/api/voice/directory',
+    label: 'Voice directory',
+    note: 'Get voice contact directory.',
+    templates: [
+      {
+        name: 'Voice directory',
+        body: null,
+        hint: 'Authorization: Bearer <token>',
+      },
+    ],
+  },
+  {
+    method: 'GET',
+    path: '/api/voice/contact',
+    label: 'Voice contact',
+    note: 'Get voice contact info by uid.',
+    templates: [
+      {
+        name: 'Voice contact',
+        body: { uid: 100000001 },
+        hint: 'Authorization: Bearer <token>',
+      },
+    ],
+  },
+  {
+    method: 'POST',
+    path: '/api/voice/domain',
+    label: 'Voice domain',
+    note: 'Update current user domain for voice calls.',
+    templates: [
+      {
+        name: 'Set domain',
+        body: { domain: 'example.com' },
+        hint: 'Authorization: Bearer <token>',
+      },
+    ],
+  },
+  {
+    method: 'GET',
     path: '/api/routes',
     label: 'Routes',
     note: 'List backend routes and templates.',
@@ -387,6 +427,7 @@ app.use('/admin', express.static(path.join(__dirname, 'index.html')));
 app.use('/api', authRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/friends', friendsRouter);
+app.use('/api/voice', voiceRouter);
 
 export function startServer(port = PORT) {
   const server = http.createServer(app);
@@ -525,6 +566,20 @@ export function startServer(port = PORT) {
           }
           if (message?.type === 'presence_request') {
             void sendPresenceSnapshot(socket, user);
+            return;
+          }
+          if (message?.type === 'voice_signal') {
+            const targetUid = Number(message?.data?.targetUid);
+            if (!Number.isInteger(targetUid)) return;
+            if (!Array.isArray(user.friends) || !user.friends.includes(targetUid)) {
+              return;
+            }
+            const signal = message?.data?.signal || null;
+            if (!signal) return;
+            sendToUid(targetUid, {
+              type: 'voice_signal',
+              data: { fromUid: user.uid, signal },
+            });
             return;
           }
         } catch {}

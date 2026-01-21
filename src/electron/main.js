@@ -26,6 +26,9 @@ let authRegion = null;
 let loginWin = null;
 let mainWin = null;
 let foundFriendWin = null;
+let voiceCallWin = null;
+let voiceCallReady = false;
+let pendingVoiceSignals = [];
 const imagePreviewWins = new Set();
 const chatWins = new Set();
 const flashTimers = new WeakMap();
@@ -149,6 +152,49 @@ function createChatWindow(payload = {}) {
     chatWins.add(chatWin);
     chatWin.on('closed', () => {
         chatWins.delete(chatWin);
+    });
+}
+
+function createVoiceCallWindow(payload = {}) {
+    if (voiceCallWin && !voiceCallWin.isDestroyed()) {
+        voiceCallWin.focus();
+        voiceCallWin.webContents.send('voice-call-init', payload);
+        return;
+    }
+    voiceCallReady = false;
+    pendingVoiceSignals = [];
+    voiceCallWin = new BrowserWindow({
+        width: 360,
+        height: 520,
+        frame: false,
+        titleBarStyle: 'hidden',
+        resizable: false,
+        backgroundColor: '#101318',
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            nodeIntegration: false,
+            contextIsolation: true
+        }
+    });
+    loadRendererPageFor(voiceCallWin, 'voice_call.html');
+    voiceCallWin.once('ready-to-show', () => {
+        voiceCallWin.show();
+    });
+    voiceCallWin.webContents.once('did-finish-load', () => {
+        voiceCallWin.webContents.send('voice-call-init', payload);
+        voiceCallReady = true;
+        pendingVoiceSignals.forEach((signal) => {
+            voiceCallWin?.webContents.send('voice-signal-in', signal);
+        });
+        pendingVoiceSignals = [];
+    });
+    if (isDev) {
+        voiceCallWin.webContents.openDevTools({ mode: 'detach' });
+    }
+    voiceCallWin.on('closed', () => {
+        voiceCallWin = null;
+        voiceCallReady = false;
+        pendingVoiceSignals = [];
     });
 }
 
@@ -406,6 +452,37 @@ ipcMain.on('open-found-friend', () => {
 
 ipcMain.on('open-chat-window', (_, payload) => {
     createChatWindow(payload);
+});
+
+ipcMain.on('open-voice-call', (_, payload) => {
+    createVoiceCallWindow(payload);
+});
+
+ipcMain.on('close-voice-call', () => {
+    if (voiceCallWin && !voiceCallWin.isDestroyed()) {
+        voiceCallWin.close();
+    }
+});
+
+ipcMain.on('voice-signal-in', (_, payload) => {
+    if (voiceCallWin && !voiceCallWin.isDestroyed()) {
+        if (voiceCallReady) {
+            voiceCallWin.webContents.send('voice-signal-in', payload);
+        } else {
+            pendingVoiceSignals.push(payload);
+        }
+    }
+});
+
+ipcMain.on('voice-signal-out', (_, payload) => {
+    if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('voice-signal-out', payload);
+    }
+    chatWins.forEach((win) => {
+        if (!win.isDestroyed()) {
+            win.webContents.send('voice-signal-out', payload);
+        }
+    });
 });
 
 ipcMain.on('open-image-preview', (_, url) => {

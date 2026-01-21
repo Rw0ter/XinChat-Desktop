@@ -211,7 +211,8 @@
                             </div>
                             <div class="chat-actions">
                                 <div class="chat-actions-left">
-                                    <button class="chat-action-btn" type="button" title="语音通话">
+                                    <button class="chat-action-btn" type="button" title="语音通话"
+                                        @click="startVoiceCall">
                                         <span class="chat-action-icon">&#xE717;</span>
                                     </button>
                                     <button class="chat-action-btn" type="button" title="视频通话">
@@ -371,7 +372,7 @@
                             <button class="tool-icon-btn" title="图片" @click="triggerImageSelect">
                                 <span class="tool-glyph">&#xEB9F;</span>
                             </button>
-                            <button class="tool-icon-btn" title="语音">
+                            <button class="tool-icon-btn" title="语音" @click="startVoiceCall">
                                 <span class="tool-glyph">&#xE720;</span>
                             </button>
                             <div class="tool-spacer"></div>
@@ -1542,6 +1543,10 @@ const handleWsMessage = (payload) => {
         message.data.forEach((entry) => applyPresenceUpdate(entry));
         return;
     }
+    if (message.type === 'voice_signal' && message.data) {
+        handleVoiceSignalFromServer(message.data);
+        return;
+    }
     if (message.type !== 'chat' || !message.data) {
         return;
     }
@@ -2328,6 +2333,80 @@ const downloadFileMessage = async (msg) => {
     link.click();
 };
 
+const updateVoiceDomain = async () => {
+    if (!auth.value.token) return;
+    const domain = window.location.host || '';
+    if (!domain) return;
+    try {
+        await fetch(`${API_BASE}/api/voice/domain`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeader()
+            },
+            body: JSON.stringify({ domain })
+        });
+    } catch {}
+};
+
+const fetchVoiceContact = async (uid) => {
+    if (!auth.value.token || !uid) return null;
+    try {
+        const res = await fetch(`${API_BASE}/api/voice/contact?uid=${uid}`, {
+            headers: authHeader()
+        });
+        const data = await res.json();
+        if (res.ok && data?.success && data.data) {
+            return data.data;
+        }
+    } catch {}
+    return null;
+};
+
+const sendVoiceSignalToServer = (payload) => {
+    const ws = wsRef.value;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(
+        JSON.stringify({
+            type: 'voice_signal',
+            data: payload
+        })
+    );
+};
+
+const openVoiceCallWindow = (payload) => {
+    window.electronAPI?.openVoiceCall?.(payload);
+};
+
+const startVoiceCall = async () => {
+    if (!activeFriend.value?.uid) {
+        statusText.value = '请先选择好友';
+        return;
+    }
+    const targetUid = activeFriend.value.uid;
+    await fetchVoiceContact(targetUid);
+    openVoiceCallWindow({
+        mode: 'caller',
+        targetUid,
+        targetName: activeFriend.value.username || `UID ${targetUid}`
+    });
+};
+
+const handleVoiceSignalFromServer = (data) => {
+    const fromUid = Number(data?.fromUid);
+    const signal = data?.signal;
+    if (!Number.isInteger(fromUid) || !signal?.type) return;
+    if (signal.type === 'offer') {
+        const friend = friends.value.find((item) => item.uid === fromUid);
+        openVoiceCallWindow({
+            mode: 'incoming',
+            targetUid: fromUid,
+            targetName: friend?.username || `UID ${fromUid}`
+        });
+    }
+    window.electronAPI?.forwardVoiceSignal?.({ fromUid, signal });
+};
+
 const getMessageImageUrls = (msg) => {
     if (msg?.type !== 'image') return [];
     if (Array.isArray(msg.data?.urls)) {
@@ -2896,9 +2975,16 @@ onMounted(async () => {
     loadFriendPreferences();
     downloadedFileByUrl.value = loadDownloadMap();
     await loadProfile();
+    updateVoiceDomain();
     await loadFriends();
     await loadRequests();
     connectWebSocket();
+    if (window.electronAPI?.onVoiceSignalOut) {
+        window.electronAPI.onVoiceSignalOut((payload) => {
+            if (!payload?.targetUid || !payload?.signal) return;
+            sendVoiceSignalToServer(payload);
+        });
+    }
     window.addEventListener('click', handleDocumentClick);
     window.addEventListener('mousemove', handleComposerResizeMove);
     window.addEventListener('mouseup', stopComposerResize);
@@ -2911,6 +2997,7 @@ watch(
             loadFriends({ silent: true });
             loadRequests({ silent: true });
             connectWebSocket();
+            updateVoiceDomain();
         }
     }
 );

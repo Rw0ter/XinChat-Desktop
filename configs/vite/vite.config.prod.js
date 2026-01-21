@@ -21,7 +21,8 @@ export default defineConfig({
                 main: path.resolve(rendererRoot, 'index.html'),
                 login: path.resolve(rendererRoot, 'login.html'),
                 found_friend: path.resolve(rendererRoot, 'found_friend.html'),
-                image_preview: path.resolve(rendererRoot, 'image_preview.html')
+                image_preview: path.resolve(rendererRoot, 'image_preview.html'),
+                voice_call: path.resolve(rendererRoot, 'voice_call.html')
             }
         }
     }
