@@ -182,7 +182,11 @@
                             </button>
                             <div v-show="isContactGroupOpen(group.key)" class="contacts-group-items">
                                 <button v-for="friend in group.items" :key="friend.uid" class="contacts-friend"
-                                    type="button" @click="openContactChat(friend)">
+                                    type="button" @click="openContactProfile(friend)">
+                                    <span class="contacts-friend-avatar">
+                                        <img v-if="friend.avatar" :src="friend.avatar" alt="avatar" />
+                                        <span v-else>{{ friend.username?.slice(0, 2).toUpperCase() }}</span>
+                                    </span>
                                     <span class="contacts-friend-name">{{ friend.username }}</span>
                                     <span class="contacts-friend-uid">UID {{ friend.uid }}</span>
                                 </button>
@@ -351,62 +355,116 @@
 
                 <div v-else class="contacts-panel">
                     <div class="contacts-header">
-                        <div class="contacts-title">{{ noticeTitle }}</div>
+                        <div class="contacts-title">{{ contactsPanelTitle }}</div>
                         <div class="contacts-tools">
-                            <button class="tool-btn" title="筛选">
-                                <span class="tool-icon">&#xE71C;</span>
-                                <span class="tool-dot"></span>
+                            <button v-if="selectedContact" class="tool-btn" title="返回"
+                                @click="clearContactProfile">
+                                <span class="tool-icon">&#xE72B;</span>
                             </button>
-                            <button class="tool-btn" title="清空">
-                                <span class="tool-icon">&#xE74D;</span>
-                            </button>
+                            <template v-else>
+                                <button class="tool-btn" title="筛选">
+                                    <span class="tool-icon">&#xE71C;</span>
+                                    <span class="tool-dot"></span>
+                                </button>
+                                <button class="tool-btn" title="清空">
+                                    <span class="tool-icon">&#xE74D;</span>
+                                </button>
+                            </template>
                         </div>
                     </div>
                     <div class="contacts-body">
-                        <div v-if="!incomingRequests.length && !outgoingRequests.length" class="empty-chat">
-                            暂无好友通知
-                        </div>
-                        <div v-else class="notify-list">
-                            <div v-for="req in incomingRequests" :key="`in-${req.uid}`" class="notify-card">
-                                <div class="notify-avatar">
-                                    <img v-if="req.avatar" :src="req.avatar" alt="avatar" />
-                                    <span v-else>{{ req.username.slice(0, 2).toUpperCase() }}</span>
-                                </div>
-                                <div class="notify-main">
-                                    <div class="notify-title">
-                                        <span class="notify-name">{{ req.username }}</span>
-                                        <span class="notify-text">请求加为好友</span>
+                        <div v-if="selectedContact" class="contact-profile">
+                            <div v-if="contactProfileLoading" class="loading">加载中...</div>
+                            <div v-else class="contact-profile-card">
+                                <div class="profile-head">
+                                    <div class="profile-avatar">
+                                        <img v-if="contactProfileSource?.avatar" :src="contactProfileSource?.avatar"
+                                            alt="avatar" />
+                                        <span v-else>{{ contactInitials }}</span>
                                     </div>
-                                    <div class="notify-sub">UID {{ req.uid }}</div>
-                                </div>
-                                <div class="notify-actions">
-                                    <button class="notify-accept" @click="handleRequestAction(req.uid, 'accept')">
-                                        同意
-                                    </button>
-                                    <button class="notify-reject" @click="handleRequestAction(req.uid, 'reject')">
-                                        拒绝
-                                    </button>
-                                </div>
-                            </div>
-                            <div v-for="req in outgoingRequests" :key="`out-${req.uid}`" class="notify-card">
-                                <div class="notify-avatar">
-                                    <img v-if="req.avatar" :src="req.avatar" alt="avatar" />
-                                    <span v-else>{{ req.username.slice(0, 2).toUpperCase() }}</span>
-                                </div>
-                                <div class="notify-main">
-                                    <div class="notify-title">
-                                        <span class="notify-name">{{ req.username }}</span>
-                                        <span class="notify-text">等待验证</span>
+                                    <div class="profile-meta">
+                                        <div class="profile-name">{{ contactDisplayName }}</div>
+                                        <div class="profile-uid">UID {{ contactProfileSource?.uid || '---' }}</div>
+                                        <div class="profile-signature">{{ contactSignature }}</div>
+                                        <div class="profile-details">
+                                            <div class="profile-detail">性别：{{ contactProfileSource?.gender || '未设置' }}
+                                            </div>
+                                            <div class="profile-detail">生日：{{ contactProfileSource?.birthday || '未设置' }}
+                                            </div>
+                                            <div class="profile-detail">
+                                                城市：{{ contactProfileSource?.country || '未设置' }}{{
+                                                    contactProfileSource?.province ? ` / ${contactProfileSource?.province}` :
+                                                        '' }}{{ contactProfileSource?.region ? ` / ${contactProfileSource?.region}` :
+                                                '' }}
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div class="notify-sub">UID {{ req.uid }}</div>
                                 </div>
-                                <div class="notify-actions">
-                                    <span class="notify-status" :class="`status-${req.status}`">
-                                        {{ req.status === 'rejected' ? '已拒绝' : '等待验证' }}
+                                <div class="contact-profile-meta">
+                                    <span class="contact-tag" :class="{ offline: contactProfileSource?.online === false }">
+                                        {{ contactProfileSource?.online === false ? '离线' : '在线' }}
                                     </span>
                                 </div>
+                                <div class="contact-profile-actions">
+                                    <button class="contact-action-btn" type="button" title="分享">
+                                        <span class="tool-icon">&#xE72D;</span>
+                                    </button>
+                                    <button class="contact-action-btn" type="button" title="音视频通话">
+                                        <span class="tool-icon">&#xE717;</span>
+                                    </button>
+                                    <button class="contact-action-btn primary" type="button" title="发消息"
+                                        @click="enterChatFromContact">
+                                        <span class="tool-icon">&#xE8BD;</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
+                        <template v-else>
+                            <div v-if="!incomingRequests.length && !outgoingRequests.length" class="empty-chat">
+                                暂无好友通知
+                            </div>
+                            <div v-else class="notify-list">
+                                <div v-for="req in incomingRequests" :key="`in-${req.uid}`" class="notify-card">
+                                    <div class="notify-avatar">
+                                        <img v-if="req.avatar" :src="req.avatar" alt="avatar" />
+                                        <span v-else>{{ req.username.slice(0, 2).toUpperCase() }}</span>
+                                    </div>
+                                    <div class="notify-main">
+                                        <div class="notify-title">
+                                            <span class="notify-name">{{ req.username }}</span>
+                                            <span class="notify-text">请求加为好友</span>
+                                        </div>
+                                        <div class="notify-sub">UID {{ req.uid }}</div>
+                                    </div>
+                                    <div class="notify-actions">
+                                        <button class="notify-accept" @click="handleRequestAction(req.uid, 'accept')">
+                                            同意
+                                        </button>
+                                        <button class="notify-reject" @click="handleRequestAction(req.uid, 'reject')">
+                                            拒绝
+                                        </button>
+                                    </div>
+                                </div>
+                                <div v-for="req in outgoingRequests" :key="`out-${req.uid}`" class="notify-card">
+                                    <div class="notify-avatar">
+                                        <img v-if="req.avatar" :src="req.avatar" alt="avatar" />
+                                        <span v-else>{{ req.username.slice(0, 2).toUpperCase() }}</span>
+                                    </div>
+                                    <div class="notify-main">
+                                        <div class="notify-title">
+                                            <span class="notify-name">{{ req.username }}</span>
+                                            <span class="notify-text">等待验证</span>
+                                        </div>
+                                        <div class="notify-sub">UID {{ req.uid }}</div>
+                                    </div>
+                                    <div class="notify-actions">
+                                        <span class="notify-status" :class="`status-${req.status}`">
+                                            {{ req.status === 'rejected' ? '已拒绝' : '等待验证' }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
                     </div>
                 </div>
             </section>
@@ -588,6 +646,9 @@ const isFriendProfileVisible = ref(false);
 const friendProfileRef = ref(null);
 const friendProfile = ref(null);
 const friendProfileLoading = ref(false);
+const selectedContact = ref(null);
+const contactProfile = ref(null);
+const contactProfileLoading = ref(false);
 const emojiPickerRef = ref(null);
 const emojiButtonRef = ref(null);
 const composerTextareaRef = ref(null);
@@ -1462,7 +1523,7 @@ const isContactGroupOpen = (key) => {
     if (typeof contactGroupOpen.value[key] === 'boolean') {
         return contactGroupOpen.value[key];
     }
-    return key === 'friends' || key === 'star';
+    return false;
 };
 
 const toggleContactGroup = (key) => {
@@ -1591,6 +1652,27 @@ const friendSignature = computed(() => {
 });
 
 const friendProfileSource = computed(() => friendProfile.value || activeFriend.value);
+
+const contactProfileSource = computed(() => contactProfile.value || selectedContact.value);
+
+const contactDisplayName = computed(() => {
+    if (!contactProfileSource.value) return '';
+    return (
+        contactProfileSource.value.nickname ||
+        contactProfileSource.value.username ||
+        `用户${contactProfileSource.value.uid || ''}`
+    );
+});
+
+const contactInitials = computed(() => {
+    const base =
+        contactProfileSource.value?.username || contactDisplayName.value || '??';
+    return String(base).slice(0, 2).toUpperCase();
+});
+
+const contactSignature = computed(() => {
+    return contactProfileSource.value?.signature || '这个人很神秘，暂未填写签名';
+});
 
 const nicknameCount = computed(() => editForm.value.nickname.length);
 const signatureCount = computed(() => editForm.value.signature.length);
@@ -1737,6 +1819,13 @@ const displayMessages = computed(() => {
 const noticeTitle = computed(() =>
     contactsNoticeType.value === 'group' ? '群通知' : '好友通知'
 );
+
+const contactsPanelTitle = computed(() => {
+    if (selectedContact.value) {
+        return contactDisplayName.value || '好友资料';
+    }
+    return noticeTitle.value;
+});
 
 const loadRequests = async ({ silent } = {}) => {
     if (!auth.value.token) return;
@@ -2011,10 +2100,25 @@ const selectFriend = async (friend) => {
     scheduleScrollToBottom();
 };
 
-const openContactChat = (friend) => {
+const openContactProfile = async (friend) => {
     if (!friend) return;
+    selectedContact.value = friend;
+    if (contactProfile.value?.uid !== friend.uid) {
+        contactProfile.value = null;
+    }
+    loadContactProfile(friend.uid);
+};
+
+const clearContactProfile = () => {
+    selectedContact.value = null;
+    contactProfile.value = null;
+};
+
+const enterChatFromContact = async () => {
+    const target = selectedContact.value;
+    if (!target?.uid) return;
     activeView.value = 'chat';
-    selectFriend(friend);
+    await selectFriend(target);
 };
 
 const sendChatEntry = async ({ type, data, payload }) => {
@@ -2142,6 +2246,22 @@ const loadFriendProfile = async (uid) => {
         }
     } catch {}
     friendProfileLoading.value = false;
+};
+
+const loadContactProfile = async (uid) => {
+    if (!auth.value.token || !uid) return;
+    if (contactProfileLoading.value && contactProfile.value?.uid === uid) return;
+    contactProfileLoading.value = true;
+    try {
+        const res = await fetch(`${API_BASE}/api/friends/profile?uid=${uid}`, {
+            headers: authHeader()
+        });
+        const data = await res.json();
+        if (res.ok && data?.success && data.user) {
+            contactProfile.value = data.user;
+        }
+    } catch {}
+    contactProfileLoading.value = false;
 };
 
 const scheduleScrollToBottom = () => {
@@ -2978,7 +3098,7 @@ select:focus {
     gap: 8px;
     padding: 7px 12px;
     border-radius: 14px;
-    background: rgba(17, 24, 39, 0.08);
+    background: transparent;
     border: 1px solid rgba(15, 23, 42, 0.1);
     font-weight: 600;
     cursor: pointer;
@@ -3083,9 +3203,10 @@ select:focus {
 }
 
 .contacts-friend {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
+    display: grid;
+    grid-template-columns: 32px 1fr auto;
+    align-items: center;
+    gap: 10px;
     padding: 8px 10px;
     border-radius: 10px;
     border: 1px solid rgba(15, 23, 42, 0.08);
@@ -3094,8 +3215,31 @@ select:focus {
     cursor: pointer;
 }
 
+.contacts-friend-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
+    background: #1f4c7a;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+}
+
+.contacts-friend-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
 .contacts-friend-name {
     font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .contacts-friend-uid {
@@ -3362,6 +3506,74 @@ select:focus {
     flex: 1;
     min-height: 0;
     background: linear-gradient(180deg, rgba(243, 248, 255, 0.9), rgba(255, 255, 255, 0.95));
+}
+
+.contact-profile {
+    display: grid;
+    gap: 12px;
+}
+
+.contact-profile-card {
+    background: #ffffff;
+    border-radius: 18px;
+    padding: 18px;
+    border: 1px solid rgba(72, 147, 214, 0.18);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+}
+
+.contact-profile-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.contact-profile-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.contact-action-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: rgba(15, 23, 42, 0.04);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: background 0.2s, border 0.2s, transform 0.2s;
+}
+
+.contact-action-btn:hover {
+    transform: translateY(-1px);
+    background: rgba(15, 23, 42, 0.08);
+}
+
+.contact-action-btn.primary {
+    background: rgba(37, 99, 235, 0.12);
+    border-color: rgba(37, 99, 235, 0.28);
+    color: #1d4ed8;
+}
+
+.contact-action-btn.primary:hover {
+    background: rgba(37, 99, 235, 0.2);
+}
+
+.contact-tag {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.12);
+    color: #1d4ed8;
+}
+
+.contact-tag.offline {
+    background: rgba(148, 163, 184, 0.2);
+    color: #64748b;
 }
 
 .notify-list {
