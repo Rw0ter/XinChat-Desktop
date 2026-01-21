@@ -116,11 +116,16 @@ const readUsers = async () => {
     const backupPath = `${USERS_PATH}.corrupt-${Date.now()}`;
     await fs.writeFile(backupPath, raw, 'utf-8');
     await fs.writeFile(USERS_PATH, '[]', 'utf-8');
-    const wrapped = new Error(
-      `Failed to parse users.json. Backup created at ${backupPath}.`
+    console.error(
+      `Failed to parse users.json. Backup created at ${backupPath}.`,
+      error
     );
-    wrapped.cause = error;
-    throw wrapped;
+    return [];
+  }
+  if (!Array.isArray(users)) {
+    console.error('Invalid users.json format. Resetting to empty array.');
+    await fs.writeFile(USERS_PATH, '[]', 'utf-8');
+    return [];
   }
   await ensureUserUids(users);
   await ensureUserDefaults(users);
