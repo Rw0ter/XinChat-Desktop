@@ -32,7 +32,10 @@ app.use(express.urlencoded({ extended: true, limit: '200mb' }));
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-File-Ext, X-File-Hash, X-File-Name, X-File-Type'
+  );
   if (req.method === 'OPTIONS') {
     res.status(204).end();
     return;
@@ -421,8 +424,22 @@ app.get('/api/routes', (req, res) => {
 });
 
 app.use('/resource', express.static(path.join(__dirname, 'resource')));
-app.use('/uploads/images', express.static(path.join(__dirname, 'data', 'images')));
-app.use('/uploads/userfile', express.static(path.join(__dirname, 'data', 'userfile')));
+app.use(
+  '/uploads/images',
+  express.static(path.join(__dirname, 'data', 'images'), {
+    maxAge: '7d',
+    etag: true,
+    immutable: true,
+  })
+);
+app.use(
+  '/uploads/userfile',
+  express.static(path.join(__dirname, 'data', 'userfile'), {
+    maxAge: '7d',
+    etag: true,
+    immutable: true,
+  })
+);
 app.use('/admin', express.static(path.join(__dirname, 'index.html')));
 
 app.use('/api', authRouter);

@@ -1,5 +1,6 @@
 import express from 'express';
 import fs from 'fs/promises';
+import { createWriteStream } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
@@ -20,6 +21,7 @@ const router = express.Router();
 const ALLOWED_TYPES = new Set(['image', 'video', 'voice', 'text', 'gif', 'file', 'card', 'call']);
 const ALLOWED_TARGET_TYPES = new Set(['private', 'group']);
 const MAX_LIMIT = 500;
+const DEFAULT_LIMIT = 50;
 const FLUSH_INTERVAL_MS = 250;
 let chatNotifier = null;
 
@@ -230,6 +232,49 @@ const storeImageBuffer = async (buffer, ext) => {
   }
   return { filename, hash };
 };
+
+const getImageExtFromMime = (mime) => {
+  const map = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+  };
+  return map[String(mime || '').toLowerCase()] || '';
+};
+
+const readStreamToFile = (req, tempPath, maxBytes) =>
+  new Promise((resolve, reject) => {
+    let size = 0;
+    let finished = false;
+    const hash = crypto.createHash('sha256');
+    const out = createWriteStream(tempPath);
+    const cleanup = (error) => {
+      if (finished) return;
+      finished = true;
+      out.destroy();
+      fs.unlink(tempPath).catch(() => {});
+      reject(error);
+    };
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        req.destroy();
+        cleanup(new Error('File too large.'));
+        return;
+      }
+      hash.update(chunk);
+    });
+    req.on('error', cleanup);
+    out.on('error', cleanup);
+    out.on('finish', () => {
+      if (finished) return;
+      finished = true;
+      resolve({ size, hash: hash.digest('hex') });
+    });
+    req.pipe(out);
+  });
 
 const findImageUrlByHash = async (hash, baseUrl) => {
   if (!hash) return '';
@@ -505,6 +550,10 @@ router.post('/send', authenticate, async (req, res) => {
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     if (type === 'image') {
       const hashUrlMap = new Map();
+      const hashData =
+        messageData.hashData && typeof messageData.hashData === 'object'
+          ? messageData.hashData
+          : null;
       const normalizeImageValue = async (value) => {
         if (typeof value === 'string') {
           const parsed = parseImageDataUrl(value);
@@ -534,6 +583,17 @@ router.post('/send', authenticate, async (req, res) => {
         const hash = typeof value.hash === 'string' ? value.hash.trim() : '';
         if (hash && hashUrlMap.has(hash)) {
           return hashUrlMap.get(hash);
+        }
+        if (hash && hashData && typeof hashData[hash] === 'string') {
+          const parsed = parseImageDataUrl(hashData[hash].trim());
+          if (parsed) {
+            const stored = await storeImageBuffer(parsed.buffer, parsed.ext);
+            const storedUrl = `${baseUrl}/uploads/images/${stored.filename}`;
+            if (stored.hash) {
+              hashUrlMap.set(stored.hash, storedUrl);
+            }
+            return storedUrl;
+          }
         }
         const foundUrl = await findImageUrlByHash(hash, baseUrl);
         if (hash && foundUrl) {
@@ -685,6 +745,110 @@ router.post('/send', authenticate, async (req, res) => {
   }
 });
 
+router.post('/upload/image', authenticate, async (req, res) => {
+  try {
+    await fs.mkdir(IMAGE_DIR, { recursive: true });
+    const headerExt = String(req.headers['x-file-ext'] || '').toLowerCase();
+    const mime = String(req.headers['content-type'] || '').toLowerCase();
+    let ext = headerExt || getImageExtFromMime(mime);
+    if (!IMAGE_EXTS.includes(ext)) {
+      ext = 'png';
+    }
+    const tempPath = path.join(
+      IMAGE_DIR,
+      `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`
+    );
+    const { size, hash } = await readStreamToFile(req, tempPath, MAX_FILE_BYTES);
+    const filename = `${hash}.${ext}`;
+    const finalPath = path.join(IMAGE_DIR, filename);
+    if (await fileExists(finalPath)) {
+      await fs.unlink(tempPath).catch(() => {});
+    } else {
+      try {
+        await fs.rename(tempPath, finalPath);
+      } catch (error) {
+        if (error?.code === 'EEXIST') {
+          await fs.unlink(tempPath).catch(() => {});
+        } else {
+          throw error;
+        }
+      }
+    }
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    res.json({
+      success: true,
+      data: { url: `${baseUrl}/uploads/images/${filename}`, hash, size },
+    });
+  } catch (error) {
+    console.error('Image upload error:', error);
+    const message = error?.message === 'File too large.' ? 'File too large.' : 'Upload failed.';
+    res.status(400).json({ success: false, message });
+  }
+});
+
+router.post('/upload/file', authenticate, async (req, res) => {
+  try {
+    await fs.mkdir(USERFILE_DIR, { recursive: true });
+    const rawName = String(req.headers['x-file-name'] || '').trim();
+    const rawType = String(req.headers['x-file-type'] || '').trim();
+    const safeName = sanitizeFilename(rawName || 'file') || 'file';
+    const mime = rawType || 'application/octet-stream';
+    const ext = guessExtension(safeName, mime);
+    const tempPath = path.join(
+      USERFILE_DIR,
+      `tmp-${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`
+    );
+    const { size, hash } = await readStreamToFile(req, tempPath, MAX_FILE_BYTES);
+    const indexRaw = await readUserfileIndex();
+    const index = await pruneUserfileIndex(indexRaw);
+    const existingPath = index[hash]?.path && (await fileExists(index[hash].path))
+      ? index[hash].path
+      : null;
+    const userDir = path.join(USERFILE_DIR, String(req.auth.user.uid));
+    await fs.mkdir(userDir, { recursive: true });
+    const filename = `${hash}.${ext}`;
+    const finalPath = path.join(userDir, filename);
+    if (await fileExists(finalPath)) {
+      await fs.unlink(tempPath).catch(() => {});
+    } else if (existingPath) {
+      await fs.copyFile(existingPath, finalPath);
+      await fs.unlink(tempPath).catch(() => {});
+    } else {
+      try {
+        await fs.rename(tempPath, finalPath);
+      } catch (error) {
+        if (error?.code === 'EEXIST') {
+          await fs.unlink(tempPath).catch(() => {});
+        } else {
+          throw error;
+        }
+      }
+    }
+    index[hash] = {
+      path: finalPath,
+      ext,
+      size,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeUserfileIndex(index);
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    res.json({
+      success: true,
+      data: {
+        url: `${baseUrl}/uploads/userfile/${req.auth.user.uid}/${filename}`,
+        hash,
+        size,
+        name: safeName,
+        mime,
+      },
+    });
+  } catch (error) {
+    console.error('File upload error:', error);
+    const message = error?.message === 'File too large.' ? 'File too large.' : 'Upload failed.';
+    res.status(400).json({ success: false, message });
+  }
+});
+
 router.get('/get', authenticate, async (req, res) => {
   try {
     await ensureChatStorage();
@@ -698,7 +862,10 @@ router.get('/get', authenticate, async (req, res) => {
     const sinceId = typeof payload.sinceId === 'string' ? payload.sinceId.trim() : '';
     const limitRaw = Number(payload.limit);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 0), MAX_LIMIT) : 0;
+    const beforeId = typeof payload.beforeId === 'string' ? payload.beforeId.trim() : '';
+    const beforeTs = payload.beforeTs;
     let sinceMs = 0;
+    let beforeMs = 0;
 
     if (!isValidTargetType(targetType)) {
       res.status(400).json({ success: false, message: 'Invalid target type.' });
@@ -721,6 +888,17 @@ router.get('/get', authenticate, async (req, res) => {
         const parsedDate = Date.parse(payload.sinceTs);
         if (Number.isFinite(parsedDate)) {
           sinceMs = parsedDate;
+        }
+      }
+    }
+    if (beforeTs) {
+      const parsed = Number(beforeTs);
+      if (Number.isFinite(parsed)) {
+        beforeMs = parsed;
+      } else if (typeof beforeTs === 'string') {
+        const parsedDate = Date.parse(beforeTs);
+        if (Number.isFinite(parsedDate)) {
+          beforeMs = parsedDate;
         }
       }
     }
@@ -753,6 +931,17 @@ router.get('/get', authenticate, async (req, res) => {
       }
       sinceStmt.free();
     }
+    if (beforeId) {
+      const beforeStmt = database.prepare('SELECT createdAtMs FROM messages WHERE id = ?');
+      beforeStmt.bind([beforeId]);
+      if (beforeStmt.step()) {
+        const row = beforeStmt.getAsObject();
+        if (row && Number.isFinite(row.createdAtMs)) {
+          beforeMs = row.createdAtMs;
+        }
+      }
+      beforeStmt.free();
+    }
 
     const params = [targetType];
     let sql =
@@ -774,10 +963,16 @@ router.get('/get', authenticate, async (req, res) => {
       sql += ' AND createdAtMs > ?';
       params.push(sinceMs);
     }
-    sql += ' ORDER BY createdAtMs ASC';
-    if (limit > 0) {
+    if (beforeMs > 0) {
+      sql += ' AND createdAtMs < ?';
+      params.push(beforeMs);
+    }
+    const effectiveLimit = limit > 0 ? limit : DEFAULT_LIMIT;
+    const order = sinceMs > 0 ? 'ASC' : 'DESC';
+    sql += ` ORDER BY createdAtMs ${order}`;
+    if (effectiveLimit > 0) {
       sql += ' LIMIT ?';
-      params.push(limit);
+      params.push(effectiveLimit);
     }
 
     const stmt = database.prepare(sql);
@@ -787,6 +982,9 @@ router.get('/get', authenticate, async (req, res) => {
       rows.push(stmt.getAsObject());
     }
     stmt.free();
+    if (order === 'DESC') {
+      rows.reverse();
+    }
     const data = rows.map(toMessage);
     res.json({ success: true, data });
   } catch (error) {

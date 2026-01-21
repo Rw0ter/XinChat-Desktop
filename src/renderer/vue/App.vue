@@ -270,7 +270,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="chat-body" ref="chatBodyRef">
+                        <div class="chat-body" ref="chatBodyRef" @scroll="handleChatScroll">
                             <div v-if="loading" class="loading">加载中...</div>
                             <div v-else-if="!messages.length" class="empty-chat">
                                 还没有聊天记录，打个招呼吧。
@@ -885,6 +885,12 @@ const imageInputRef = ref(null);
 const fileInputRef = ref(null);
 const draftImages = ref([]);
 const imageUploadCache = new Map();
+const MESSAGE_PAGE_SIZE = 50;
+const isLoadingMore = ref(false);
+const hasMoreMessages = ref(true);
+const oldestMessageId = ref('');
+const UPLOAD_CONCURRENCY = 3;
+const pendingImageHashes = new Map();
 const fileDraft = ref(null);
 const isFileModalOpen = ref(false);
 const downloadedFileByUrl = ref({});
@@ -1041,6 +1047,116 @@ const computeFileHash = async (file) => {
         .join('');
 };
 
+const imageWorkerState = {
+    worker: null,
+    pending: new Map(),
+    seq: 0
+};
+
+const getImageWorker = () => {
+    if (imageWorkerState.worker) return imageWorkerState.worker;
+    const worker = new Worker(new URL('./workers/imageWorker.js', import.meta.url), {
+        type: 'module'
+    });
+    worker.onmessage = (event) => {
+        const { id, hash, error } = event.data || {};
+        const entry = imageWorkerState.pending.get(id);
+        if (!entry) return;
+        imageWorkerState.pending.delete(id);
+        if (error) {
+            entry.reject(new Error(error));
+            return;
+        }
+        entry.resolve({ hash });
+    };
+    worker.onerror = (error) => {
+        imageWorkerState.pending.forEach((entry) => entry.reject(error));
+        imageWorkerState.pending.clear();
+    };
+    imageWorkerState.worker = worker;
+    return worker;
+};
+
+const runImageWorker = (file) =>
+    new Promise((resolve, reject) => {
+        const worker = getImageWorker();
+        const id = `img-${Date.now()}-${imageWorkerState.seq++}`;
+        imageWorkerState.pending.set(id, { resolve, reject });
+        worker.postMessage({ id, file });
+    });
+
+const processImageFile = async (file) => {
+    try {
+        return await runImageWorker(file);
+    } catch {
+        const hash = await computeFileHash(file);
+        return { hash };
+    }
+};
+
+const releaseDraftImage = (item) => {
+    if (item?.preview) {
+        try {
+            URL.revokeObjectURL(item.preview);
+        } catch {}
+    }
+    if (item?.id) {
+        pendingImageHashes.delete(item.id);
+    }
+};
+
+const runWithConcurrency = async (tasks, limit) => {
+    const results = new Array(tasks.length);
+    let nextIndex = 0;
+    const runners = Array.from({ length: Math.min(limit, tasks.length) }).map(async () => {
+        while (nextIndex < tasks.length) {
+            const current = nextIndex++;
+            results[current] = await tasks[current]();
+        }
+    });
+    await Promise.all(runners);
+    return results;
+};
+
+const uploadImageBinary = async (file, hash) => {
+    const ext = file.type?.startsWith('image/')
+        ? file.type.split('/')[1]?.toLowerCase()
+        : '';
+    const res = await fetch(`${API_BASE}/api/chat/upload/image`, {
+        method: 'POST',
+        headers: {
+            ...authHeader(),
+            'Content-Type': 'application/octet-stream',
+            'X-File-Ext': ext || 'png',
+            'X-File-Hash': hash
+        },
+        body: file
+    });
+    const result = await res.json();
+    if (!res.ok || !result?.success) {
+        throw new Error(result?.message || '图片上传失败');
+    }
+    return result.data?.url || '';
+};
+
+const uploadFileBinary = async (file) => {
+    const res = await fetch(`${API_BASE}/api/chat/upload/file`, {
+        method: 'POST',
+        headers: {
+            ...authHeader(),
+            'Content-Type': 'application/octet-stream',
+            'X-File-Name': file.name || 'file',
+            'X-File-Type': file.type || 'application/octet-stream'
+        },
+        body: file
+    });
+    const result = await res.json();
+    if (!res.ok || !result?.success) {
+        throw new Error(result?.message || '文件上传失败');
+    }
+    return result.data;
+};
+
 const getImageExtFromDataUrl = (dataUrl) => {
     const match = /^data:image\/(png|jpe?g|gif|webp);base64,/i.exec(dataUrl || '');
     if (!match) return '';
@@ -1061,6 +1177,7 @@ const triggerFileSelect = () => {
 };
 
 const clearDraftImages = () => {
+    draftImages.value.forEach(releaseDraftImage);
     draftImages.value = [];
     if (imageInputRef.value) {
         imageInputRef.value.value = '';
@@ -1078,6 +1195,8 @@ const clearFileDraft = () => {
 const handleComposerBackspace = (event) => {
     if (!draftImages.value.length) return;
     if (draft.value.length > 0) return;
+    const last = draftImages.value[draftImages.value.length - 1];
+    releaseDraftImage(last);
     draftImages.value = draftImages.value.slice(0, -1);
     event.preventDefault();
 };
@@ -1336,16 +1455,13 @@ const setDraftFile = async (file) => {
         statusText.value = '文件大小需小于 20MB';
         return;
     }
-    const dataUrl = await readFileAsDataUrl(file);
-    if (typeof dataUrl === 'string') {
-        fileDraft.value = {
-            name: file.name || '未命名文件',
-            size: file.size,
-            type: file.type || 'application/octet-stream',
-            dataUrl
-        };
-        isFileModalOpen.value = true;
-    }
+    fileDraft.value = {
+        name: file.name || '未命名文件',
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+        file
+    };
+    isFileModalOpen.value = true;
 };
 
 const setDraftImage = async (file) => {
@@ -1357,24 +1473,38 @@ const setDraftImage = async (file) => {
         statusText.value = '图片大小需小于 20MB';
         return;
     }
-    const hash = await computeFileHash(file);
-    const cached = imageUploadCache.get(hash) || {};
-    let dataUrl = cached.dataUrl;
-    if (!dataUrl) {
-        dataUrl = await readFileAsDataUrl(file);
-    }
-    if (typeof dataUrl === 'string') {
-        imageUploadCache.set(hash, { ...cached, dataUrl });
-        draftImages.value = [
-            ...draftImages.value,
-            {
-                id: `${hash}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-                hash,
-                dataUrl,
-                preview: dataUrl
+    const preview = URL.createObjectURL(file);
+    const id = `img-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const item = {
+        id,
+        hash: '',
+        preview,
+        file,
+        pending: true
+    };
+    draftImages.value = [...draftImages.value, item];
+    const hashPromise = processImageFile(file)
+        .then((result) => {
+            const hash = result?.hash || '';
+            if (!hash) {
+                throw new Error('hash_failed');
             }
-        ];
-    }
+            draftImages.value = draftImages.value.map((entry) =>
+                entry.id === id ? { ...entry, hash, pending: false } : entry
+            );
+            return hash;
+        })
+        .catch(() => {
+            draftImages.value = draftImages.value.map((entry) =>
+                entry.id === id ? { ...entry, pending: false } : entry
+            );
+            statusText.value = '图片处理失败';
+            return '';
+        })
+        .finally(() => {
+            pendingImageHashes.delete(id);
+        });
+    pendingImageHashes.set(id, hashPromise);
 };
 
 const handleFileSelect = async (event) => {
@@ -2410,7 +2540,7 @@ const canSendFile = computed(() => {
     return (
         !!auth.value.token &&
         !!activeFriend.value?.uid &&
-        !!fileDraft.value?.dataUrl
+        !!fileDraft.value?.file
     );
 });
 
@@ -3004,49 +3134,92 @@ const loadFriends = async ({ silent } = {}) => {
     }
 };
 
-const loadMessages = async (targetUid, { silent, forceScroll } = {}) => {
+const loadMessages = async (targetUid, { silent, forceScroll, appendOlder } = {}) => {
     if (!auth.value.token || !targetUid) return;
-    if (!silent) {
+    if (!silent && !appendOlder) {
         loading.value = true;
     }
     try {
-        const url = `${API_BASE}/api/chat/get?targetType=private&targetUid=${targetUid}`;
+        const beforeId = appendOlder ? oldestMessageId.value : '';
+        const url = `${API_BASE}/api/chat/get?targetType=private&targetUid=${targetUid}&limit=${MESSAGE_PAGE_SIZE}${
+            beforeId ? `&beforeId=${encodeURIComponent(beforeId)}` : ''
+        }`;
         const res = await fetch(url, { headers: authHeader() });
         const data = await res.json();
         if (res.ok && data?.success) {
             const next = data.data || [];
-            const signature = buildMessageSignature(next);
-            if (signature !== lastMessageSignature.value) {
-                const shouldStick = forceScroll ? true : isAtBottom();
-                messages.value = next;
-                messageIdSet = new Set(next.map((item) => item.id).filter(Boolean));
-                lastMessageSignature.value = signature;
-                if (shouldStick) {
-                    await nextTick();
-                    scheduleScrollToBottom();
+            if (appendOlder) {
+                if (!next.length) {
+                    hasMoreMessages.value = false;
+                    return;
                 }
+                const chatBody = chatBodyRef.value;
+                const prevScrollHeight = chatBody?.scrollHeight || 0;
+                const prevScrollTop = chatBody?.scrollTop || 0;
+                const deduped = next.filter((item) => !messageIdSet.has(item.id));
+                if (deduped.length) {
+                    messages.value = [...deduped, ...messages.value];
+                    deduped.forEach((item) => messageIdSet.add(item.id));
+                }
+                oldestMessageId.value = messages.value[0]?.id || oldestMessageId.value;
+                hasMoreMessages.value = next.length >= MESSAGE_PAGE_SIZE;
+                lastMessageSignature.value = buildMessageSignature(messages.value);
+                await nextTick();
+                if (chatBody) {
+                    const nextScrollHeight = chatBody.scrollHeight;
+                    chatBody.scrollTop = nextScrollHeight - prevScrollHeight + prevScrollTop;
+                }
+                return;
+            }
+            const signature = buildMessageSignature(next);
+            const shouldStick = forceScroll ? true : isAtBottom();
+            messages.value = next;
+            messageIdSet = new Set(next.map((item) => item.id).filter(Boolean));
+            lastMessageSignature.value = signature;
+            oldestMessageId.value = next[0]?.id || '';
+            hasMoreMessages.value = next.length >= MESSAGE_PAGE_SIZE;
+            if (shouldStick) {
+                await nextTick();
+                scheduleScrollToBottom();
             }
             if (forceScroll && signature === lastMessageSignature.value) {
                 await nextTick();
                 scheduleScrollToBottom();
             }
         } else {
-            if (!silent) {
+            if (!silent && !appendOlder) {
                 messages.value = [];
                 messageIdSet = new Set();
                 lastMessageSignature.value = '';
+                oldestMessageId.value = '';
+                hasMoreMessages.value = false;
             }
         }
     } catch (err) {
-        if (!silent) {
+        if (!silent && !appendOlder) {
             messages.value = [];
             messageIdSet = new Set();
             lastMessageSignature.value = '';
+            oldestMessageId.value = '';
+            hasMoreMessages.value = false;
         }
     } finally {
-        if (!silent) {
+        if (!silent && !appendOlder) {
             loading.value = false;
         }
+    }
+};
+
+const handleChatScroll = async () => {
+    if (isLoadingMore.value || !hasMoreMessages.value) return;
+    const el = chatBodyRef.value;
+    if (!el || el.scrollTop > 24) return;
+    if (!activeFriend.value?.uid) return;
+    isLoadingMore.value = true;
+    try {
+        await loadMessages(activeFriend.value.uid, { appendOlder: true, silent: true });
+    } finally {
+        isLoadingMore.value = false;
     }
 };
 
@@ -3245,25 +3418,30 @@ const sendChatEntry = async ({ type, data, payload }) => {
 
 const sendFileMessage = async () => {
     if (!canSendFile.value || !fileDraft.value) return;
-    const payload = {
-        name: fileDraft.value.name,
-        size: fileDraft.value.size,
-        mime: fileDraft.value.type,
-        dataUrl: fileDraft.value.dataUrl
-    };
-    const data = {
-        name: fileDraft.value.name,
-        size: fileDraft.value.size,
-        mime: fileDraft.value.type,
-        url: ''
-    };
-    const ok = await sendChatEntry({
-        type: 'file',
-        data,
-        payload
-    });
-    if (ok) {
-        clearFileDraft();
+    try {
+        const upload = await uploadFileBinary(fileDraft.value.file);
+        const payload = {
+            name: fileDraft.value.name,
+            size: fileDraft.value.size,
+            mime: fileDraft.value.type,
+            url: upload.url
+        };
+        const data = {
+            name: fileDraft.value.name,
+            size: fileDraft.value.size,
+            mime: fileDraft.value.type,
+            url: upload.url
+        };
+        const ok = await sendChatEntry({
+            type: 'file',
+            data,
+            payload
+        });
+        if (ok) {
+            clearFileDraft();
+        }
+    } catch (error) {
+        statusText.value = error?.message || '文件上传失败';
     }
 };
 
@@ -3275,35 +3453,67 @@ const sendMessage = async () => {
     const hasImages = draftImages.value.length > 0;
     if (!hasText && !hasImages) return;
     if (hasImages) {
-        const hashSeen = new Set();
-        const hashMeta = new Map();
-        const urls = draftImages.value.map((item) => {
+        if (pendingImageHashes.size) {
+            await Promise.all([...pendingImageHashes.values()]);
+        }
+        const hashToUrl = new Map();
+        const uploads = [];
+        draftImages.value.forEach((item) => {
+            if (!item.hash) {
+                return;
+            }
             const cached = imageUploadCache.get(item.hash) || {};
             if (cached.url) {
-                return cached.url;
+                hashToUrl.set(item.hash, cached.url);
+                return;
             }
-            if (hashSeen.has(item.hash)) {
-                return { hash: item.hash };
+            if (!item.file) {
+                return;
             }
-            hashSeen.add(item.hash);
-            const ext = getImageExtFromDataUrl(item.dataUrl);
-            if (ext) {
-                hashMeta.set(item.hash, ext);
+            if (hashToUrl.has(item.hash)) {
+                return;
             }
-            return { hash: item.hash, dataUrl: item.dataUrl };
+            uploads.push(async () => {
+                const url = await uploadImageBinary(item.file, item.hash);
+                hashToUrl.set(item.hash, url);
+                imageUploadCache.set(item.hash, { ...cached, url });
+            });
+        });
+        if (uploads.length) {
+            try {
+                await runWithConcurrency(uploads, UPLOAD_CONCURRENCY);
+            } catch (error) {
+                statusText.value = error?.message || '图片上传失败';
+                return;
+            }
+        }
+        const urls = draftImages.value.map((item) => {
+            if (!item.hash) {
+                return '';
+            }
+            const cached = imageUploadCache.get(item.hash) || {};
+            return cached.url || hashToUrl.get(item.hash) || '';
         });
         const payload = {
-            urls,
+            urls: urls.filter((url) => typeof url === 'string' && url.trim()),
             content: hasText ? content : ''
         };
+        if (!payload.urls.length) {
+            statusText.value = '图片上传失败';
+            return;
+        }
         const ok = await sendChatEntry({
             type: 'image',
             data: payload,
             payload
         });
         if (ok) {
-            hashMeta.forEach((ext, hash) => {
-                const url = `${API_BASE}/uploads/images/${hash}.${ext}`;
+            const latest = messages.value[messages.value.length - 1];
+            const urlsFromServer = Array.isArray(latest?.data?.urls) ? latest.data.urls : [];
+            urlsFromServer.forEach((url) => {
+                const match = /\/uploads\/images\/([a-f0-9]+)\.(png|jpe?g|gif|webp)/i.exec(url || '');
+                if (!match) return;
+                const hash = match[1];
                 const cached = imageUploadCache.get(hash) || {};
                 imageUploadCache.set(hash, { ...cached, url });
             });
