@@ -41,6 +41,8 @@ let db = null;
 let flushTimer = null;
 let flushInFlight = false;
 let pendingFlush = false;
+let chatStorageReady = false;
+let chatStoragePromise = null;
 
 const parseImageDataUrl = (value) => {
   if (typeof value !== 'string') return null;
@@ -445,10 +447,23 @@ const migrateChatJson = async () => {
 };
 
 const ensureChatStorage = async () => {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await openDb();
-  await migrateChatJson();
-  await maybeCleanupUserFiles();
+  if (chatStorageReady) return;
+  if (chatStoragePromise) {
+    await chatStoragePromise;
+    return;
+  }
+  chatStoragePromise = (async () => {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await openDb();
+    await migrateChatJson();
+    await maybeCleanupUserFiles();
+    chatStorageReady = true;
+  })();
+  try {
+    await chatStoragePromise;
+  } finally {
+    chatStoragePromise = null;
+  }
 };
 
 const extractToken = (req) => {
@@ -736,7 +751,7 @@ router.post('/send', authenticate, async (req, res) => {
     stmt.free();
     scheduleFlush();
     if (chatNotifier) {
-      chatNotifier(entry);
+      setImmediate(() => chatNotifier(entry));
     }
     res.json({ success: true, data: entry });
   } catch (error) {

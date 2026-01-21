@@ -93,6 +93,10 @@ const clearUserSession = async (users, userIndex) => {
   await writeUsers(users);
 };
 
+const USERS_CACHE_TTL_MS = 1000;
+let cachedUsers = null;
+let cachedUsersAt = 0;
+
 const ensureStorage = async () => {
   await fs.mkdir(DATA_DIR, { recursive: true });
   try {
@@ -104,10 +108,16 @@ const ensureStorage = async () => {
 
 const readUsers = async () => {
   await ensureStorage();
+  const now = Date.now();
+  if (cachedUsers && now - cachedUsersAt < USERS_CACHE_TTL_MS) {
+    return cachedUsers;
+  }
   const raw = await fs.readFile(USERS_PATH, 'utf-8');
   const trimmed = raw.trim();
   if (!trimmed) {
-    return [];
+    cachedUsers = [];
+    cachedUsersAt = now;
+    return cachedUsers;
   }
   let users;
   try {
@@ -120,21 +130,29 @@ const readUsers = async () => {
       `Failed to parse users.json. Backup created at ${backupPath}.`,
       error
     );
-    return [];
+    cachedUsers = [];
+    cachedUsersAt = now;
+    return cachedUsers;
   }
   if (!Array.isArray(users)) {
     console.error('Invalid users.json format. Resetting to empty array.');
     await fs.writeFile(USERS_PATH, '[]', 'utf-8');
-    return [];
+    cachedUsers = [];
+    cachedUsersAt = now;
+    return cachedUsers;
   }
   await ensureUserUids(users);
   await ensureUserDefaults(users);
-  return users;
+  cachedUsers = users;
+  cachedUsersAt = now;
+  return cachedUsers;
 };
 
 const writeUsers = async (users) => {
   await ensureStorage();
   await fs.writeFile(USERS_PATH, JSON.stringify(users, null, 2), 'utf-8');
+  cachedUsers = users;
+  cachedUsersAt = Date.now();
 };
 
 const ensureUserUids = async (users) => {
