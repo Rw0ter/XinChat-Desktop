@@ -1569,7 +1569,7 @@ const contactGroups = computed(() => {
     });
 });
 
-const toggleEmojiPicker = () => {
+const toggleEmojiPicker = async () => {
     showEmojiPicker.value = !showEmojiPicker.value;
     if (showEmojiPicker.value) {
         await updateEmojiPanelPosition();
@@ -2893,7 +2893,7 @@ select:focus {
     display: grid;
     grid-template-columns: 70px 300px 1fr;
     gap: 0px;
-    padding: 17px 2px 0px;
+    padding: 8px 2px 0px;
     position: relative;
     z-index: 1;
 }
@@ -3705,8 +3705,8 @@ select:focus {
 }
 
 .bubble-image {
-    max-width: 220px;
-    max-height: 240px;
+    max-width: 90%;
+    max-height: 24vh;
     border-radius: 12px;
     display: block;
 }
