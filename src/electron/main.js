@@ -25,6 +25,7 @@ let loginWin = null;
 let mainWin = null;
 let foundFriendWin = null;
 const imagePreviewWins = new Set();
+const chatWins = new Set();
 const flashTimers = new WeakMap();
 const isDev = process.env.VITE_DEV_SERVER_URL ? true : false;
 
@@ -114,6 +115,38 @@ function createFoundFriendWindow() {
     }
     foundFriendWin.on('closed', () => {
         foundFriendWin = null;
+    });
+}
+
+function createChatWindow(payload = {}) {
+    const chatWin = new BrowserWindow({
+        width: 900,
+        height: 600,
+        frame: false,
+        titleBarStyle: 'hidden',
+        resizable: true,
+        backgroundColor: '#eef5ff',
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            nodeIntegration: false,
+            contextIsolation: true
+        }
+    });
+
+    applyAppMenuFor(chatWin);
+    loadRendererPageFor(chatWin, 'index.html');
+    chatWin.once('ready-to-show', () => {
+        chatWin.show();
+    });
+    chatWin.webContents.once('did-finish-load', () => {
+        chatWin.webContents.send('open-chat', payload);
+    });
+    if (isDev) {
+        chatWin.webContents.openDevTools({ mode: 'detach' });
+    }
+    chatWins.add(chatWin);
+    chatWin.on('closed', () => {
+        chatWins.delete(chatWin);
     });
 }
 
@@ -280,6 +313,10 @@ ipcMain.on('logout', () => {
 
 ipcMain.on('open-found-friend', () => {
     createFoundFriendWindow();
+});
+
+ipcMain.on('open-chat-window', (_, payload) => {
+    createChatWindow(payload);
 });
 
 ipcMain.on('open-image-preview', (_, url) => {

@@ -120,7 +120,9 @@
                     <div class="list">
                         <div class="section-title">私聊列表</div>
                         <button v-for="friend in filteredFriends" :key="friend.uid" class="list-item"
-                            :class="{ active: activeFriend?.uid === friend.uid }" @click="selectFriend(friend)">
+                            :class="{ active: activeFriend?.uid === friend.uid, pinned: isPinned(friend.uid) }"
+                            @click="selectFriend(friend)"
+                            @contextmenu.prevent="openListMenu(friend, $event)">
                             <div class="avatar">
                                 <img v-if="friend.avatar" :src="friend.avatar" alt="avatar" />
                                 <span v-else>{{ friend.username?.slice(0, 2).toUpperCase() }}</span>
@@ -128,6 +130,10 @@
                             <div class="list-meta">
                                 <div class="list-name">{{ friend.username }}</div>
                                 <div class="list-sub">UID {{ friend.uid }}</div>
+                            </div>
+                            <div class="list-badges">
+                                <span v-if="isMuted(friend.uid)" class="list-badge mute">免打扰</span>
+                                <span v-if="isUnread(friend.uid)" class="list-unread-dot"></span>
                             </div>
                         </button>
                         <div v-if="!filteredFriends.length" class="empty-state">
@@ -165,38 +171,24 @@
                         <button class="contacts-tab">群聊</button>
                     </div>
                     <div class="contacts-list">
-                        <button class="contacts-row">
-                            <span>我的设备</span>
-                            <span class="count">1</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>机器人</span>
-                            <span class="count">1</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>特别关心</span>
-                            <span class="count">1/4</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>我的好友</span>
-                            <span class="count">{{ filteredFriends.length }}/{{ filteredFriends.length }}</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>朋友</span>
-                            <span class="count">0/0</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>家人</span>
-                            <span class="count">0/0</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>同学</span>
-                            <span class="count">0/1</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>么么哒</span>
-                            <span class="count">0/0</span>
-                        </button>
+                        <div v-for="group in contactGroups" :key="group.key" class="contacts-group">
+                            <button class="contacts-row contacts-group-header" type="button"
+                                @click="toggleContactGroup(group.key)">
+                                <span class="contacts-group-title">{{ group.label }}</span>
+                                <span class="contacts-group-meta">
+                                    <span class="count">{{ groupCountText(group) }}</span>
+                                    <span class="chev" :class="{ open: isContactGroupOpen(group.key) }">&#xE76C;</span>
+                                </span>
+                            </button>
+                            <div v-show="isContactGroupOpen(group.key)" class="contacts-group-items">
+                                <button v-for="friend in group.items" :key="friend.uid" class="contacts-friend"
+                                    type="button" @click="openContactChat(friend)">
+                                    <span class="contacts-friend-name">{{ friend.username }}</span>
+                                    <span class="contacts-friend-uid">UID {{ friend.uid }}</span>
+                                </button>
+                                <div v-if="!group.items.length" class="contacts-empty">暂无成员</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </aside>
@@ -240,7 +232,7 @@
                                             <div class="profile-detail">
                                                 城市：{{ friendProfileSource?.country || '未设置' }}{{
                                                     friendProfileSource?.province ? ` / ${friendProfileSource?.province}` :
-                                                '' }}{{ friendProfileSource?.region ? ` /
+                                                        '' }}{{ friendProfileSource?.region ? ` /
                                                 ${friendProfileSource?.region}` : '' }}
                                             </div>
                                         </div>
@@ -434,6 +426,21 @@
                 </div>
             </section>
         </main>
+        <div v-if="showListMenu" ref="listMenuRef" class="list-context-menu"
+            :style="{ top: `${listMenuPosition.y}px`, left: `${listMenuPosition.x}px` }" @click.stop>
+            <button class="list-context-item" type="button" @click="pinFriendFromMenu">
+                {{ isPinned(listMenuFriend?.uid) ? '取消置顶' : '置顶' }}
+            </button>
+            <button class="list-context-item" type="button" @click="copyUidFromMenu">复制UID</button>
+            <button class="list-context-item" type="button" @click="toggleUnreadFromMenu">
+                {{ isUnread(listMenuFriend?.uid) ? '标记已读' : '标记未读' }}
+            </button>
+            <button class="list-context-item" type="button" @click="openDetachedChatFromMenu">打开独立聊天窗口</button>
+            <button class="list-context-item" type="button" @click="toggleMuteFromMenu">设置免打扰</button>
+            <button class="list-context-item danger" type="button" @click="removeFromListFromMenu">
+                从消息列表中移除
+            </button>
+        </div>
         <transition name="profile-modal" appear>
             <div v-show="isEditOpen" class="profile-modal">
                 <div class="profile-modal__backdrop" @click="closeEditProfile"></div>
@@ -577,6 +584,15 @@ const searchText = ref('');
 const statusText = ref('在线');
 const activeView = ref('chat');
 const contactsNoticeType = ref('friend');
+const contactGroupOpen = ref({});
+const showListMenu = ref(false);
+const listMenuPosition = ref({ x: 0, y: 0 });
+const listMenuFriend = ref(null);
+const listMenuRef = ref(null);
+const pinnedUids = ref([]);
+const mutedUids = ref([]);
+const unreadUids = ref([]);
+const pendingChatUid = ref(null);
 const incomingRequests = ref([]);
 const outgoingRequests = ref([]);
 const showSendMenu = ref(false);
@@ -661,6 +677,30 @@ const handleLogout = () => {
 const MAX_AVATAR_BYTES = 20 * 1024 * 1024;
 const CROP_SIZE = 240;
 const MAX_CHAT_IMAGE_BYTES = 20 * 1024 * 1024;
+const LIST_MENU_WIDTH = 220;
+const LIST_MENU_HEIGHT = 6 * 38;
+const LIST_MENU_MARGIN = 12;
+
+const loadUidList = (key) => {
+    try {
+        const raw = localStorage.getItem(key);
+        const list = JSON.parse(raw || '[]');
+        return Array.isArray(list) ? list.map((item) => Number(item)).filter(Number.isFinite) : [];
+    } catch {
+        return [];
+    }
+};
+
+const saveUidList = (key, list) => {
+    try {
+        localStorage.setItem(key, JSON.stringify(list));
+    } catch {}
+};
+
+const loadFriendPreferences = () => {
+    pinnedUids.value = loadUidList('vp_pinned_uids');
+    mutedUids.value = loadUidList('vp_muted_uids');
+};
 
 const readFileAsDataUrl = (file) =>
     new Promise((resolve, reject) => {
@@ -724,6 +764,152 @@ const clearAvatar = () => {
     if (avatarInputRef.value) {
         avatarInputRef.value.value = '';
     }
+};
+
+const isPinned = (uid) => pinnedUids.value.includes(uid);
+const isMuted = (uid) => mutedUids.value.includes(uid);
+const isUnread = (uid) => unreadUids.value.includes(uid);
+
+const clampListMenuPosition = (x, y) => {
+    const maxX = Math.max(LIST_MENU_MARGIN, window.innerWidth - LIST_MENU_WIDTH - LIST_MENU_MARGIN);
+    const maxY = Math.max(LIST_MENU_MARGIN, window.innerHeight - LIST_MENU_HEIGHT - LIST_MENU_MARGIN);
+    return {
+        x: Math.min(maxX, Math.max(LIST_MENU_MARGIN, x)),
+        y: Math.min(maxY, Math.max(LIST_MENU_MARGIN, y))
+    };
+};
+
+const openListMenu = (friend, event) => {
+    if (!friend || !event) return;
+    listMenuFriend.value = friend;
+    listMenuPosition.value = clampListMenuPosition(event.clientX, event.clientY);
+    showListMenu.value = true;
+};
+
+const closeListMenu = () => {
+    showListMenu.value = false;
+    listMenuFriend.value = null;
+};
+
+const updatePinned = (uid) => {
+    if (!uid) return;
+    if (pinnedUids.value.includes(uid)) {
+        pinnedUids.value = pinnedUids.value.filter((item) => item !== uid);
+    } else {
+        pinnedUids.value = [uid, ...pinnedUids.value];
+    }
+    saveUidList('vp_pinned_uids', pinnedUids.value);
+};
+
+const updateMuted = (uid) => {
+    if (!uid) return;
+    if (mutedUids.value.includes(uid)) {
+        mutedUids.value = mutedUids.value.filter((item) => item !== uid);
+    } else {
+        mutedUids.value = [...mutedUids.value, uid];
+    }
+    saveUidList('vp_muted_uids', mutedUids.value);
+};
+
+const removePinned = (uid) => {
+    if (!uid || !pinnedUids.value.includes(uid)) return;
+    pinnedUids.value = pinnedUids.value.filter((item) => item !== uid);
+    saveUidList('vp_pinned_uids', pinnedUids.value);
+};
+
+const removeMuted = (uid) => {
+    if (!uid || !mutedUids.value.includes(uid)) return;
+    mutedUids.value = mutedUids.value.filter((item) => item !== uid);
+    saveUidList('vp_muted_uids', mutedUids.value);
+};
+
+const markUnread = (uid) => {
+    if (!uid || unreadUids.value.includes(uid)) return;
+    unreadUids.value = [...unreadUids.value, uid];
+};
+
+const clearUnread = (uid) => {
+    if (!uid) return;
+    if (unreadUids.value.includes(uid)) {
+        unreadUids.value = unreadUids.value.filter((item) => item !== uid);
+    }
+};
+
+const copyText = async (text) => {
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch {}
+    try {
+        const el = document.createElement('textarea');
+        el.value = text;
+        el.style.position = 'fixed';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(el);
+        return ok;
+    } catch {
+        return false;
+    }
+};
+
+const pinFriendFromMenu = () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    updatePinned(uid);
+    closeListMenu();
+};
+
+const copyUidFromMenu = async () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    const ok = await copyText(String(uid));
+    statusText.value = ok ? 'UID 已复制' : '复制失败';
+    closeListMenu();
+};
+
+const toggleUnreadFromMenu = () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    if (unreadUids.value.includes(uid)) {
+        clearUnread(uid);
+    } else {
+        markUnread(uid);
+    }
+    closeListMenu();
+};
+
+const openDetachedChatFromMenu = () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    window.electronAPI?.openChatWindow?.({ uid });
+    closeListMenu();
+};
+
+const toggleMuteFromMenu = () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    updateMuted(uid);
+    closeListMenu();
+};
+
+const removeFromListFromMenu = () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    friends.value = friends.value.filter((item) => item.uid !== uid);
+    removePinned(uid);
+    removeMuted(uid);
+    clearUnread(uid);
+    if (activeFriend.value?.uid === uid) {
+        activeFriend.value = null;
+        messages.value = [];
+        localMessages.value = [];
+    }
+    closeListMenu();
 };
 
 const handleAvatarChange = async (event) => {
@@ -1078,11 +1264,16 @@ const handleWsMessage = (payload) => {
         return;
     }
     messageIdSet.add(entry.id);
-    if (entry.senderUid !== auth.value.uid) {
-        playNotifySound();
-        flashWindow();
-    }
     const activeUid = activeFriend.value?.uid;
+    if (entry.senderUid !== auth.value.uid) {
+        if (!mutedUids.value.includes(entry.senderUid)) {
+            playNotifySound();
+            flashWindow();
+        }
+        if (entry.targetType === 'private' && entry.senderUid !== activeUid) {
+            markUnread(entry.senderUid);
+        }
+    }
     if (
         entry.targetType === 'private' &&
         activeUid &&
@@ -1331,7 +1522,54 @@ const updateEmojiPanelPosition = async () => {
     };
 };
 
-const toggleEmojiPicker = async () => {
+const contactGroupDefs = [
+    { key: 'devices', label: '我的设备' },
+    { key: 'bots', label: '机器人' },
+    { key: 'star', label: '特别关心' },
+    { key: 'friends', label: '我的好友' },
+    { key: 'friends_group', label: '朋友' },
+    { key: 'family', label: '家人' },
+    { key: 'classmates', label: '同学' },
+    { key: 'cute', label: '么么哒' }
+];
+
+const isContactGroupOpen = (key) => {
+    if (typeof contactGroupOpen.value[key] === 'boolean') {
+        return contactGroupOpen.value[key];
+    }
+    return key === 'friends' || key === 'star';
+};
+
+const toggleContactGroup = (key) => {
+    contactGroupOpen.value = {
+        ...contactGroupOpen.value,
+        [key]: !isContactGroupOpen(key)
+    };
+};
+
+const groupCountText = (group) => {
+    if (!group) return '0/0';
+    return `${group.online}/${group.total}`;
+};
+
+const contactGroups = computed(() => {
+    const map = new Map(contactGroupDefs.map((def) => [def.key, []]));
+    friends.value.forEach((friend) => {
+        map.get('friends')?.push(friend);
+    });
+    return contactGroupDefs.map((def) => {
+        const items = map.get(def.key) || [];
+        const online = items.filter((item) => item.online === true).length;
+        return {
+            ...def,
+            items,
+            total: items.length,
+            online
+        };
+    });
+});
+
+const toggleEmojiPicker = () => {
     showEmojiPicker.value = !showEmojiPicker.value;
     if (showEmojiPicker.value) {
         await updateEmojiPanelPosition();
@@ -1370,6 +1608,12 @@ const addEmoji = (emoji) => {
 const handleDocumentClick = (event) => {
     if (showSendMenu.value) {
         showSendMenu.value = false;
+    }
+    if (showListMenu.value) {
+        const menu = listMenuRef.value;
+        if (!menu || !menu.contains(event.target)) {
+            closeListMenu();
+        }
     }
     if (showEmojiPicker.value) {
         const picker = emojiPickerRef.value;
@@ -1458,12 +1702,25 @@ watch(
 
 const filteredFriends = computed(() => {
     const query = searchText.value.trim().toLowerCase();
-    if (!query) return friends.value;
-    return friends.value.filter(
-        (item) =>
-            item.username?.toLowerCase().includes(query) ||
-            String(item.uid).includes(query)
-    );
+    const base = !query
+        ? friends.value
+        : friends.value.filter(
+              (item) =>
+                  item.username?.toLowerCase().includes(query) ||
+                  String(item.uid).includes(query)
+          );
+    if (!pinnedUids.value.length) return base;
+    const pinnedSet = new Set(pinnedUids.value);
+    const pinned = [];
+    const rest = [];
+    base.forEach((item) => {
+        if (pinnedSet.has(item.uid)) {
+            pinned.push(item);
+        } else {
+            rest.push(item);
+        }
+    });
+    return [...pinned, ...rest];
 });
 
 const canSend = computed(() => {
@@ -1520,6 +1777,30 @@ const openImagePreview = (url) => {
     if (!url) return;
     window.electronAPI?.openImagePreview?.(url);
 };
+
+const selectFriendByUid = async (uid) => {
+    if (!uid) return false;
+    const friend = friends.value.find((item) => item.uid === uid);
+    if (!friend) return false;
+    activeView.value = 'chat';
+    await selectFriend(friend);
+    return true;
+};
+
+const handleOpenChatPayload = async (payload) => {
+    const uid = Number(payload?.uid);
+    if (!Number.isFinite(uid)) return;
+    pendingChatUid.value = uid;
+    if (await selectFriendByUid(uid)) {
+        pendingChatUid.value = null;
+    }
+};
+
+if (window.electronAPI?.onOpenChat) {
+    window.electronAPI.onOpenChat((payload) => {
+        handleOpenChatPayload(payload);
+    });
+}
 
 const displayMessages = computed(() => {
     const targetUid = activeFriend.value?.uid;
@@ -1732,6 +2013,22 @@ const loadFriends = async ({ silent } = {}) => {
             } else if (friends.value.length) {
                 selectFriend(friends.value[0]);
             }
+            const knownUids = new Set(next.map((item) => item.uid));
+            if (pinnedUids.value.some((uid) => !knownUids.has(uid))) {
+                pinnedUids.value = pinnedUids.value.filter((uid) => knownUids.has(uid));
+                saveUidList('vp_pinned_uids', pinnedUids.value);
+            }
+            if (mutedUids.value.some((uid) => !knownUids.has(uid))) {
+                mutedUids.value = mutedUids.value.filter((uid) => knownUids.has(uid));
+                saveUidList('vp_muted_uids', mutedUids.value);
+            }
+            if (pendingChatUid.value) {
+                const target = next.find((item) => item.uid === pendingChatUid.value);
+                if (target) {
+                    pendingChatUid.value = null;
+                    selectFriend(target);
+                }
+            }
         }
     } catch (err) {
         if (!silent) {
@@ -1788,9 +2085,17 @@ const loadMessages = async (targetUid, { silent, forceScroll } = {}) => {
 
 const selectFriend = async (friend) => {
     activeFriend.value = friend;
+    clearUnread(friend?.uid);
+    closeListMenu();
     await loadMessages(friend.uid, { forceScroll: true });
     await nextTick();
     scheduleScrollToBottom();
+};
+
+const openContactChat = (friend) => {
+    if (!friend) return;
+    activeView.value = 'chat';
+    selectFriend(friend);
 };
 
 const sendChatEntry = async ({ type, data, payload }) => {
@@ -1941,6 +2246,7 @@ onMounted(async () => {
         isReady.value = true;
     });
     await loadAuth();
+    loadFriendPreferences();
     await loadProfile();
     await loadFriends();
     await loadRequests();
@@ -2687,8 +2993,9 @@ select:focus {
 .contacts-sidebar {
     display: flex;
     flex-direction: column;
-    gap: 18px;
-    height: 100%;
+    gap: 10px;
+    height: 85vh;
+    min-height: 0;
 }
 
 .contacts-search {
@@ -2703,7 +3010,7 @@ select:focus {
     gap: 10px;
     background: rgba(255, 255, 255, 0.6);
     border-radius: 16px;
-    padding: 8px 12px;
+    padding: 0px 12px;
     border: 1px solid rgba(15, 23, 42, 0.12);
     width: 270px;
 }
@@ -2733,7 +3040,7 @@ select:focus {
     border: 1px solid rgba(255, 255, 255, 0.2);
     background: rgba(31, 41, 55, 0.08);
     border-radius: 16px;
-    padding: 10px 12px;
+    padding: 7px 12px;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -2758,7 +3065,7 @@ select:focus {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 10px 12px;
+    padding: 7px 12px;
     border-radius: 14px;
     background: rgba(17, 24, 39, 0.08);
     border: 1px solid rgba(15, 23, 42, 0.1);
@@ -2793,7 +3100,7 @@ select:focus {
     grid-template-columns: 1fr 1fr;
     background: rgba(17, 24, 39, 0.08);
     border-radius: 14px;
-    padding: 4px;
+    padding: 1px;
     gap: 6px;
 }
 
@@ -2813,9 +3120,11 @@ select:focus {
 
 .contacts-list {
     display: grid;
-    gap: 10px;
+    gap: 5px;
     overflow-y: auto;
     padding-right: 4px;
+    flex: 1;
+    min-height: 0;
 }
 
 .contacts-row {
@@ -2834,6 +3143,58 @@ select:focus {
 .contacts-row .count {
     color: #6b7280;
     font-weight: 600;
+}
+
+.contacts-group {
+    display: grid;
+    gap: 8px;
+}
+
+.contacts-group-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.contacts-group-header .chev {
+    transition: transform 0.2s ease;
+    transform: rotate(0deg);
+}
+
+.contacts-group-header .chev.open {
+    transform: rotate(90deg);
+}
+
+.contacts-group-items {
+    display: grid;
+    gap: 6px;
+    padding: 0 6px 6px 6px;
+}
+
+.contacts-friend {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.contacts-friend-name {
+    font-weight: 600;
+}
+
+.contacts-friend-uid {
+    color: #6b7280;
+}
+
+.contacts-empty {
+    font-size: 12px;
+    color: #9ca3af;
+    padding: 6px 10px 10px;
 }
 
 .search {
@@ -2872,7 +3233,7 @@ select:focus {
 
 .list-item {
     display: grid;
-    grid-template-columns: 42px 1fr;
+    grid-template-columns: 42px 1fr auto;
     gap: 12px;
     align-items: center;
     text-align: left;
@@ -2894,6 +3255,11 @@ select:focus {
 .list-item.active {
     border-color: rgba(72, 147, 214, 0.6);
     box-shadow: 0 12px 20px rgba(72, 147, 214, 0.18);
+}
+
+.list-item.pinned {
+    background: rgba(31, 76, 122, 0.08);
+    border-color: rgba(31, 76, 122, 0.2);
 }
 
 .avatar {
@@ -2935,6 +3301,73 @@ select:focus {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.list-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.list-badge {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(72, 147, 214, 0.12);
+    color: #1d4ed8;
+    font-weight: 600;
+}
+
+.list-badge.mute {
+    background: rgba(15, 23, 42, 0.08);
+    color: #334155;
+}
+
+.list-unread-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #ef4444;
+}
+
+.list-context-menu {
+    position: fixed;
+    z-index: 3000;
+    width: 180px;
+    padding: 10px;
+    border-radius: 14px;
+    background: transparent;
+    border: 1px solid rgba(72, 147, 214, 0.2);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+    display: grid;
+    gap: 1px;
+    background-color: white;
+}
+
+.list-context-item {
+    border: none;
+    border-radius: 10px;
+    padding: 9px 12px;
+    background: transparent;
+    color: #1e3a8a;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.list-context-item:hover {
+    background: #e5e7eb;
+    color: #111827;
+}
+
+.list-context-item.danger {
+    color: #b91c1c;
+}
+
+.list-context-item.danger:hover {
+    background: #e5e7eb;
+    color: #991b1b;
 }
 
 
