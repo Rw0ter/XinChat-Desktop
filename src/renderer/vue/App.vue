@@ -772,6 +772,8 @@ const listMenuRef = ref(null);
 const pinnedUids = ref([]);
 const mutedUids = ref([]);
 const unreadUids = ref([]);
+const hiddenUids = ref([]);
+const blockedUids = ref([]);
 const pendingChatUid = ref(null);
 const incomingRequests = ref([]);
 const outgoingRequests = ref([]);
@@ -993,6 +995,32 @@ const clearAvatar = () => {
 const isPinned = (uid) => pinnedUids.value.includes(uid);
 const isMuted = (uid) => mutedUids.value.includes(uid);
 const isUnread = (uid) => unreadUids.value.includes(uid);
+const isHidden = (uid) => hiddenUids.value.includes(uid);
+const isBlocked = (uid) => blockedUids.value.includes(uid);
+
+const updateHidden = (uid) => {
+    if (hiddenUids.value.includes(uid)) {
+        hiddenUids.value = hiddenUids.value.filter((item) => item !== uid);
+    } else {
+        hiddenUids.value = [...hiddenUids.value, uid];
+    }
+    saveUidList('vp_hidden_uids', hiddenUids.value);
+};
+
+const showInChatList = (uid) => {
+    if (!uid || !hiddenUids.value.includes(uid)) return;
+    hiddenUids.value = hiddenUids.value.filter((item) => item !== uid);
+    saveUidList('vp_hidden_uids', hiddenUids.value);
+};
+
+const updateBlocked = (uid) => {
+    if (blockedUids.value.includes(uid)) {
+        blockedUids.value = blockedUids.value.filter((item) => item !== uid);
+    } else {
+        blockedUids.value = [...blockedUids.value, uid];
+    }
+    saveUidList('vp_blocked_uids', blockedUids.value);
+};
 
 const clampListMenuPosition = (x, y) => {
     const maxX = Math.max(LIST_MENU_MARGIN, window.innerWidth - LIST_MENU_WIDTH - LIST_MENU_MARGIN);
