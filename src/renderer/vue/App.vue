@@ -76,7 +76,7 @@
                     <button class="rail-btn" :class="{ active: activeView === 'chat' }" title="消息"
                         @click="activeView = 'chat'">
                         <span class="rail-icon">&#xE8BD;</span>
-                        <span class="rail-badge">99+</span>
+                        <span v-if="totalUnread" class="rail-badge">{{ formatUnread(totalUnread) }}</span>
                     </button>
                     <button class="rail-btn" :class="{ active: activeView === 'contacts' }" title="联系人"
                         @click="openContacts">
@@ -260,10 +260,13 @@
                                         {{ msg.senderUid === auth.uid ? displayName : activeFriend?.username }}
                                     </div>
                                     <div class="bubble-text">
-                                        <img v-if="msg.type === 'image' && getMessageImageUrl(msg)" class="bubble-image"
-                                            :src="getMessageImageUrl(msg)" alt="image"
-                                            @dblclick.stop="openImagePreview(getMessageImageUrl(msg))" />
                                         <template v-if="msg.type === 'image'">
+                                            <div class="bubble-image-grid">
+                                                <img v-for="(url, index) in getMessageImageUrls(msg)"
+                                                    :key="`${msg.id || 'img'}-${index}`" class="bubble-image"
+                                                    :src="url" alt="image"
+                                                    @dblclick.stop="openImagePreview(url)" />
+                                            </div>
                                             <div v-if="getMessageImageCaption(msg)" class="bubble-caption">
                                                 {{ getMessageImageCaption(msg) }}
                                             </div>
@@ -279,28 +282,32 @@
 
 
 
-                    <div class="composer">
+                    <div class="composer" :style="{ height: `${composerHeight}px` }">
+                        <div class="composer-resize-handle" @mousedown.prevent="startComposerResize"></div>
                         <div class="composer-toolbar">
                             <button ref="emojiButtonRef" class="tool-icon-btn" :class="{ 'is-active': showEmojiPicker }"
                                 title="表情" @click.stop="toggleEmojiPicker">
                                 <span class="tool-glyph">&#xE170;</span>
                             </button>
-                            <div v-if="showEmojiPicker" ref="emojiPickerRef" class="emoji-panel" @click.stop>
-                                <div class="emoji-tabs">
-                                    <button v-for="tab in emojiTabs" :key="tab.id" class="emoji-tab"
-                                        :class="{ active: emojiTab === tab.id }" type="button"
-                                        @click="emojiTab = tab.id">
-                                        {{ tab.label }}
-                                    </button>
+                            <teleport to="body">
+                                <div v-if="showEmojiPicker" ref="emojiPickerRef" class="emoji-panel"
+                                    :style="emojiPanelStyle" @click.stop>
+                                    <div class="emoji-tabs">
+                                        <button v-for="tab in emojiTabs" :key="tab.id" class="emoji-tab"
+                                            :class="{ active: emojiTab === tab.id }" type="button"
+                                            @click="emojiTab = tab.id">
+                                            {{ tab.label }}
+                                        </button>
+                                    </div>
+                                    <div v-if="currentEmojiList.length" class="emoji-grid">
+                                        <button v-for="item in currentEmojiList" :key="`${emojiTab}-${item}`"
+                                            class="emoji-btn" type="button" @click="addEmoji(item)">
+                                            {{ item }}
+                                        </button>
+                                    </div>
+                                    <div v-else class="emoji-empty">暂无表情</div>
                                 </div>
-                                <div v-if="currentEmojiList.length" class="emoji-grid">
-                                    <button v-for="item in currentEmojiList" :key="`${emojiTab}-${item}`"
-                                        class="emoji-btn" type="button" @click="addEmoji(item)">
-                                        {{ item }}
-                                    </button>
-                                </div>
-                                <div v-else class="emoji-empty">暂无表情</div>
-                            </div>
+                            </teleport>
                             <button class="tool-icon-btn" title="剪刀">
                                 <span class="tool-glyph">&#xE8C6;</span>
                             </button>
@@ -308,6 +315,7 @@
                                 <span class="tool-glyph">&#xE8A5;</span>
                             </button>
                             <input ref="imageInputRef" class="composer-image-input" type="file" accept="image/*"
+                                multiple
                                 @change="handleImageSelect" />
                             <button class="tool-icon-btn" title="图片" @click="triggerImageSelect">
                                 <span class="tool-glyph">&#xEB9F;</span>
@@ -323,13 +331,20 @@
                                 <span class="tool-glyph">&#xE712;</span>
                             </button>
                         </div>
-                        <div v-if="draftImage" class="composer-image-preview">
-                            <img :src="draftImage" alt="preview" />
-                            <button class="preview-remove" type="button" @click="clearDraftImage">×</button>
+                        <div class="composer-body">
+                            <div class="composer-input">
+                                <div v-if="draftImages.length" class="composer-image-list">
+                                    <div v-for="(url, index) in draftImages" :key="`${url}-${index}`"
+                                        class="composer-image-preview">
+                                        <img :src="url" alt="preview" />
+                                    </div>
+                                </div>
+                                <textarea v-model="draft" ref="composerTextareaRef" placeholder=""
+                                    @keydown.enter.exact.prevent="sendMessage" @keydown.enter.shift.stop
+                                    @keydown.backspace="handleComposerBackspace"
+                                    @paste="handleComposerPaste"></textarea>
+                            </div>
                         </div>
-                        <textarea v-model="draft" ref="composerTextareaRef" placeholder=""
-                            @keydown.enter.exact.prevent="sendMessage" @keydown.enter.shift.stop
-                            @paste="handleComposerPaste"></textarea>
                         <div class="composer-actions">
                             <div class="send-group">
                                 <button class="send-btn" :disabled="!canSend" @click="sendMessage">
@@ -619,6 +634,7 @@ const friends = ref([]);
 const activeFriend = ref(null);
 const messages = ref([]);
 const localMessages = ref([]);
+const unreadByUid = ref({});
 const chatBodyRef = ref(null);
 const wsRef = ref(null);
 const draft = ref('');
@@ -651,10 +667,14 @@ const contactProfile = ref(null);
 const contactProfileLoading = ref(false);
 const emojiPickerRef = ref(null);
 const emojiButtonRef = ref(null);
+const emojiPanelStyle = ref({});
+const composerHeight = ref(210);
+const isResizingComposer = ref(false);
+const composerResizeStart = ref({ y: 0, height: 0 });
 const composerTextareaRef = ref(null);
 const avatarInputRef = ref(null);
 const imageInputRef = ref(null);
-const draftImage = ref('');
+const draftImages = ref([]);
 const isCropOpen = ref(false);
 const cropSource = ref('');
 const cropScale = ref(1);
@@ -768,11 +788,37 @@ const triggerImageSelect = () => {
     imageInputRef.value?.click?.();
 };
 
-const clearDraftImage = () => {
-    draftImage.value = '';
+const clearDraftImages = () => {
+    draftImages.value = [];
     if (imageInputRef.value) {
         imageInputRef.value.value = '';
     }
+};
+
+const handleComposerBackspace = (event) => {
+    if (!draftImages.value.length) return;
+    if (draft.value.length > 0) return;
+    draftImages.value = draftImages.value.slice(0, -1);
+    event.preventDefault();
+};
+
+const startComposerResize = (event) => {
+    isResizingComposer.value = true;
+    composerResizeStart.value = { y: event.clientY, height: composerHeight.value };
+    document.body.style.userSelect = 'none';
+};
+
+const handleComposerResizeMove = (event) => {
+    if (!isResizingComposer.value) return;
+    const delta = composerResizeStart.value.y - event.clientY;
+    const next = composerResizeStart.value.height + delta;
+    composerHeight.value = Math.min(360, Math.max(140, next));
+};
+
+const stopComposerResize = () => {
+    if (!isResizingComposer.value) return;
+    isResizingComposer.value = false;
+    document.body.style.userSelect = '';
 };
 
 const clearAvatar = () => {
@@ -967,15 +1013,17 @@ const setDraftImage = async (file) => {
     }
     const dataUrl = await readFileAsDataUrl(file);
     if (typeof dataUrl === 'string') {
-        draftImage.value = dataUrl;
+        draftImages.value = [...draftImages.value, dataUrl];
     }
 };
 
 const handleImageSelect = async (event) => {
-    const file = event.target?.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target?.files || []);
+    if (!files.length) return;
     try {
-        await setDraftImage(file);
+        for (const file of files) {
+            await setDraftImage(file);
+        }
     } catch {
         statusText.value = '图片读取失败';
     } finally {
@@ -988,18 +1036,21 @@ const handleImageSelect = async (event) => {
 const handleComposerPaste = async (event) => {
     const items = event.clipboardData?.items;
     if (!items) return;
+    let handled = false;
     for (const item of items) {
         if (item.kind === 'file' && item.type?.startsWith('image/')) {
             const file = item.getAsFile();
-            if (!file) return;
-            event.preventDefault();
+            if (!file) continue;
+            handled = true;
             try {
                 await setDraftImage(file);
             } catch {
                 statusText.value = '图片读取失败';
             }
-            return;
         }
+    }
+    if (handled) {
+        event.preventDefault();
     }
 };
 
@@ -1295,6 +1346,12 @@ const handleWsMessage = (payload) => {
         nextTick(() => {
             scrollToBottom();
         });
+    } else if (entry.targetType === 'private' && entry.senderUid !== auth.value.uid) {
+        const isViewingChat = activeView.value === 'chat';
+        const isActiveSender = activeUid && entry.senderUid === activeUid;
+        if (!isViewingChat || !isActiveSender) {
+            incrementUnread(entry.senderUid);
+        }
     }
 };
 
@@ -1343,6 +1400,37 @@ const connectWebSocket = () => {
 const openContacts = async () => {
     activeView.value = 'contacts';
     await loadRequests({ silent: true });
+};
+
+const getUnreadCount = (uid) => {
+    const key = String(uid ?? '');
+    return unreadByUid.value[key] || 0;
+};
+
+const setUnreadCount = (uid, count) => {
+    const key = String(uid ?? '');
+    const next = { ...unreadByUid.value };
+    if (!count) {
+        delete next[key];
+    } else {
+        next[key] = count;
+    }
+    unreadByUid.value = next;
+};
+
+const incrementUnread = (uid) => {
+    if (!uid) return;
+    const current = getUnreadCount(uid);
+    setUnreadCount(uid, current + 1);
+};
+
+const totalUnread = computed(() => {
+    return Object.values(unreadByUid.value).reduce((sum, count) => sum + count, 0);
+});
+
+const formatUnread = (count) => {
+    if (!count) return '';
+    return count > 99 ? '99+' : String(count);
 };
 const toggleSendMenu = () => {
     showSendMenu.value = !showSendMenu.value;
@@ -1508,6 +1596,31 @@ const currentEmojiList = computed(() => {
     return emojiCatalog[emojiTab.value] || [];
 });
 
+const updateEmojiPanelPosition = async () => {
+    await nextTick();
+    const picker = emojiPickerRef.value;
+    const trigger = emojiButtonRef.value;
+    if (!picker || !trigger) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const pickerRect = picker.getBoundingClientRect();
+    const margin = 10;
+    let left = triggerRect.left + triggerRect.width / 2 - pickerRect.width / 2;
+    let top = triggerRect.top - pickerRect.height - margin;
+    if (top < margin) {
+        top = triggerRect.bottom + margin;
+    }
+    if (left + pickerRect.width > window.innerWidth - margin) {
+        left = window.innerWidth - pickerRect.width - margin;
+    }
+    if (left < margin) {
+        left = margin;
+    }
+    emojiPanelStyle.value = {
+        left: `${Math.round(left)}px`,
+        top: `${Math.round(top)}px`
+    };
+};
+
 const contactGroupDefs = [
     { key: 'devices', label: '我的设备' },
     { key: 'bots', label: '机器人' },
@@ -1555,8 +1668,11 @@ const contactGroups = computed(() => {
     });
 });
 
-const toggleEmojiPicker = () => {
+const toggleEmojiPicker = async () => {
     showEmojiPicker.value = !showEmojiPicker.value;
+    if (showEmojiPicker.value) {
+        await updateEmojiPanelPosition();
+    }
 };
 
 const closeEmojiPicker = () => {
@@ -1731,7 +1847,7 @@ const canSend = computed(() => {
     return (
         !!auth.value.token &&
         !!activeFriend.value?.uid &&
-        (draft.value.trim().length > 0 || !!draftImage.value)
+        (draft.value.trim().length > 0 || draftImages.value.length > 0)
     );
 });
 
@@ -1757,10 +1873,13 @@ const renderMessage = (msg) => {
     return '[未知消息]';
 };
 
-const getMessageImageUrl = (msg) => {
-    if (msg?.type !== 'image') return '';
+const getMessageImageUrls = (msg) => {
+    if (msg?.type !== 'image') return [];
+    if (Array.isArray(msg.data?.urls)) {
+        return msg.data.urls.filter((item) => typeof item === 'string' && item.trim());
+    }
     const url = msg.data?.url || msg.data?.content || '';
-    return typeof url === 'string' ? url : '';
+    return typeof url === 'string' && url.trim() ? [url] : [];
 };
 
 const getMessageImageCaption = (msg) => {
@@ -2093,6 +2212,7 @@ const loadMessages = async (targetUid, { silent, forceScroll } = {}) => {
 
 const selectFriend = async (friend) => {
     activeFriend.value = friend;
+    setUnreadCount(friend.uid, 0);
     clearUnread(friend?.uid);
     closeListMenu();
     await loadMessages(friend.uid, { forceScroll: true });
@@ -2180,16 +2300,20 @@ const sendMessage = async () => {
     showSendMenu.value = false;
     const content = sanitizeText(draft.value).trim();
     const hasText = content.length > 0;
-    const hasImage = !!draftImage.value;
-    if (!hasText && !hasImage) return;
-    if (hasImage) {
+    const hasImages = draftImages.value.length > 0;
+    if (!hasText && !hasImages) return;
+    if (hasImages) {
+        const payload = {
+            urls: [...draftImages.value],
+            content: hasText ? content : ''
+        };
         const ok = await sendChatEntry({
             type: 'image',
-            data: { url: draftImage.value, content: hasText ? content : '' },
-            payload: { url: draftImage.value, content: hasText ? content : '' }
+            data: payload,
+            payload
         });
         if (ok) {
-            clearDraftImage();
+            clearDraftImages();
             if (hasText) {
                 draft.value = '';
             }
@@ -2287,6 +2411,8 @@ onMounted(async () => {
     await loadRequests();
     connectWebSocket();
     window.addEventListener('click', handleDocumentClick);
+    window.addEventListener('mousemove', handleComposerResizeMove);
+    window.addEventListener('mouseup', stopComposerResize);
 });
 
 watch(
@@ -2302,6 +2428,8 @@ watch(
 
 onBeforeUnmount(() => {
     window.removeEventListener('click', handleDocumentClick);
+    window.removeEventListener('mousemove', handleComposerResizeMove);
+    window.removeEventListener('mouseup', stopComposerResize);
     closeWebSocket();
     if (cropDragging.value) {
         stopCropDrag();
@@ -2357,7 +2485,7 @@ onBeforeUnmount(() => {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    padding: 0 18px;
+    padding: 0 10px;
     position: relative;
     z-index: 2;
     -webkit-app-region: drag;
@@ -2896,7 +3024,7 @@ select:focus {
 
 .wc-btn {
     width: 40px;
-    height: 28px;
+    height: 40px;
     background: transparent;
     border: none;
     color: #6b7280;
@@ -2924,7 +3052,7 @@ select:focus {
     display: grid;
     grid-template-columns: 70px 300px 1fr;
     gap: 0px;
-    padding: 17px 2px 0px;
+    padding: 8px 2px 0px;
     position: relative;
     z-index: 1;
 }
@@ -3358,19 +3486,25 @@ select:focus {
     text-overflow: ellipsis;
 }
 
+.list-badge {
+    min-width: 22px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #ff5a3c;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 12px rgba(255, 90, 60, 0.25);
+  
+  }
 .list-badges {
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.list-badge {
-    font-size: 10px;
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: rgba(72, 147, 214, 0.12);
-    color: #1d4ed8;
-    font-weight: 600;
 }
 
 .list-badge.mute {
@@ -3829,9 +3963,15 @@ select:focus {
 
 .bubble-image {
     max-width: 90%;
-    max-height: 240px;
+    max-height: 24vh;
     border-radius: 12px;
     display: block;
+}
+
+.bubble-image-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .bubble-caption {
@@ -3856,12 +3996,37 @@ select:focus {
 .composer {
     padding: 16px 22px 18px;
     border-top: 1px solid var(--line);
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 12px;
     flex: 0 0 auto;
-    max-height: 210px;
-    overflow-y: auto;
+    max-height: 360px;
+    overflow: hidden;
     overscroll-behavior: contain;
+    position: relative;
+    z-index: 2;
+}
+
+.composer-resize-handle {
+    position: absolute;
+    top: -6px;
+    left: 0;
+    right: 0;
+    height: 12px;
+    cursor: row-resize;
+    z-index: 3;
+}
+
+.composer-resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 5px;
+    width: 44px;
+    height: 3px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .composer-toolbar {
@@ -3904,16 +4069,15 @@ select:focus {
 }
 
 .emoji-panel {
-    position: absolute;
-    left: 0;
-    bottom: calc(100% + 10px);
+    position: fixed;
     width: 360px;
     background: linear-gradient(180deg, #f9fcff 0%, #ffffff 100%);
     border-radius: 18px;
     border: 1px solid rgba(15, 23, 42, 0.12);
     box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);
     padding: 12px;
-    z-index: 6;
+    z-index: 50;
+
 }
 
 .emoji-tabs {
@@ -3977,6 +4141,27 @@ select:focus {
     flex: 1;
 }
 
+.composer-body {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+.composer-input {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    flex-direction: column;
+}
+
+.composer-image-list {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    max-width: 80%;
+}
+
 .composer textarea {
     min-height: 70px;
     resize: none;
@@ -3986,6 +4171,7 @@ select:focus {
     padding: 12px 14px;
     background: rgba(255, 255, 255, 0.9);
     outline: none;
+    flex: 1;
 }
 
 .composer textarea::-webkit-scrollbar {
@@ -4004,9 +4190,8 @@ select:focus {
 
 .composer-image-preview {
     position: relative;
-    width: 160px;
-    height: 160px;
-    margin-bottom: 8px;
+    width: 96px;
+    height: 96px;
     border-radius: 14px;
     overflow: hidden;
     border: 1px solid rgba(15, 23, 42, 0.12);
@@ -4019,21 +4204,6 @@ select:focus {
     object-fit: cover;
     display: block;
 }
-
-.preview-remove {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 24px;
-    height: 24px;
-    border-radius: 999px;
-    border: none;
-    background: rgba(15, 23, 42, 0.7);
-    color: #fff;
-    font-weight: 700;
-    cursor: pointer;
-}
-
 
 .composer-actions {
     display: flex;
