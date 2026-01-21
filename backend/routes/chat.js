@@ -10,12 +10,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const IMAGE_DIR = path.join(DATA_DIR, 'images');
+const USERFILE_DIR = path.join(DATA_DIR, 'userfile');
+const USERFILE_INDEX_PATH = path.join(USERFILE_DIR, 'index.json');
 const CHAT_JSON_PATH = path.join(DATA_DIR, 'chat.json');
 const DB_PATH = path.join(DATA_DIR, 'chat.sqlite');
 const DB_TMP_PATH = path.join(DATA_DIR, 'chat.sqlite.tmp');
 
 const router = express.Router();
-const ALLOWED_TYPES = new Set(['image', 'video', 'voice', 'text', 'gif']);
+const ALLOWED_TYPES = new Set(['image', 'video', 'voice', 'text', 'gif', 'file']);
 const ALLOWED_TARGET_TYPES = new Set(['private', 'group']);
 const MAX_LIMIT = 500;
 const FLUSH_INTERVAL_MS = 250;
@@ -25,6 +27,11 @@ const isValidType = (value) => typeof value === 'string' && ALLOWED_TYPES.has(va
 const isValidTargetType = (value) =>
   typeof value === 'string' && ALLOWED_TARGET_TYPES.has(value);
 const DATA_IMAGE_RE = /^data:(image\/(png|jpe?g|gif|webp));base64,/i;
+const DATA_URL_RE = /^data:([^;]+);base64,/i;
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const FILE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+let lastCleanupAt = 0;
 
 let sqlModule = null;
 let db = null;
@@ -47,6 +54,165 @@ const parseImageDataUrl = (value) => {
   } catch {
     return null;
   }
+};
+
+const parseDataUrl = (value) => {
+  if (typeof value !== 'string') return null;
+  const match = value.match(DATA_URL_RE);
+  if (!match) return null;
+  const mime = match[1].toLowerCase();
+  const base64 = value.slice(match[0].length);
+  if (!base64) return null;
+  try {
+    const buffer = Buffer.from(base64, 'base64');
+    if (!buffer.length) return null;
+    return { buffer, mime };
+  } catch {
+    return null;
+  }
+};
+
+const fileExists = async (targetPath) => {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const readUserfileIndex = async () => {
+  try {
+    const raw = await fs.readFile(USERFILE_INDEX_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeUserfileIndex = async (index) => {
+  await fs.mkdir(USERFILE_DIR, { recursive: true });
+  await fs.writeFile(USERFILE_INDEX_PATH, JSON.stringify(index || {}, null, 2));
+};
+
+const pruneUserfileIndex = async (index) => {
+  const next = { ...(index || {}) };
+  const entries = Object.entries(next);
+  for (const [hash, entry] of entries) {
+    const entryPath = entry?.path;
+    if (!entryPath || !(await fileExists(entryPath))) {
+      delete next[hash];
+    }
+  }
+  if (entries.length !== Object.keys(next).length) {
+    await writeUserfileIndex(next);
+  }
+  return next;
+};
+
+const sanitizeFilename = (value) => {
+  const base = path.basename(String(value || '').trim());
+  if (!base) return '';
+  return base.replace(/[\\/:*?"<>|]+/g, '_');
+};
+
+const guessExtension = (name, mime) => {
+  const extFromName = path.extname(name || '').slice(1).toLowerCase();
+  if (extFromName) return extFromName;
+  const map = {
+    'application/pdf': 'pdf',
+    'application/zip': 'zip',
+    'application/x-zip-compressed': 'zip',
+    'application/json': 'json',
+    'text/plain': 'txt',
+  };
+  return map[mime] || 'bin';
+};
+
+const cleanupUserFiles = async () => {
+  const now = Date.now();
+  await fs.mkdir(USERFILE_DIR, { recursive: true });
+  const entries = await fs.readdir(USERFILE_DIR, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const userDir = path.join(USERFILE_DIR, entry.name);
+    const files = await fs.readdir(userDir, { withFileTypes: true });
+    for (const file of files) {
+      if (!file.isFile()) continue;
+      const filePath = path.join(userDir, file.name);
+      try {
+        const stat = await fs.stat(filePath);
+        if (now - stat.mtimeMs > FILE_TTL_MS) {
+          await fs.unlink(filePath);
+        }
+      } catch {}
+    }
+    const remaining = await fs.readdir(userDir).catch(() => []);
+    if (remaining.length === 0) {
+      await fs.rmdir(userDir).catch(() => {});
+    }
+  }
+  const index = await readUserfileIndex();
+  await pruneUserfileIndex(index);
+};
+
+const maybeCleanupUserFiles = async () => {
+  const now = Date.now();
+  if (now - lastCleanupAt < CLEANUP_INTERVAL_MS) return;
+  lastCleanupAt = now;
+  await cleanupUserFiles();
+};
+
+const buildFileMeta = (name, size, mime) => {
+  const uploadedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + FILE_TTL_MS).toISOString();
+  return {
+    name,
+    size,
+    mime,
+    uploadedAt,
+    expiresAt,
+  };
+};
+
+const storeUserFileBuffer = async (buffer, senderUid, name, mime) => {
+  const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+  const safeBase = sanitizeFilename(name) || 'file';
+  const indexRaw = await readUserfileIndex();
+  const index = await pruneUserfileIndex(indexRaw);
+  const existingPath = index[hash]?.path && (await fileExists(index[hash].path))
+    ? index[hash].path
+    : null;
+  const ext = index[hash]?.ext || guessExtension(safeBase, mime);
+  const userDir = path.join(USERFILE_DIR, String(senderUid));
+  await fs.mkdir(userDir, { recursive: true });
+  const filename = `${hash}.${ext}`;
+  const filePath = path.join(userDir, filename);
+  if (!(await fileExists(filePath))) {
+    if (existingPath) {
+      await fs.copyFile(existingPath, filePath);
+    } else {
+      await fs.writeFile(filePath, buffer);
+    }
+  }
+  index[hash] = {
+    path: filePath,
+    ext,
+    size: buffer.length,
+    updatedAt: new Date().toISOString(),
+  };
+  await writeUserfileIndex(index);
+  return { filename, hash };
+};
+
+const storeUserFileFromPath = async (sourcePath, senderUid, name, mime) => {
+  const stat = await fs.stat(sourcePath);
+  if (stat.size > MAX_FILE_BYTES) {
+    throw new Error('File too large.');
+  }
+  const buffer = await fs.readFile(sourcePath);
+  return storeUserFileBuffer(buffer, senderUid, name, mime);
 };
 
 const storeImageBuffer = async (buffer, ext) => {
@@ -219,6 +385,7 @@ const ensureChatStorage = async () => {
   await fs.mkdir(DATA_DIR, { recursive: true });
   await openDb();
   await migrateChatJson();
+  await maybeCleanupUserFiles();
 };
 
 const extractToken = (req) => {
@@ -317,8 +484,8 @@ router.post('/send', authenticate, async (req, res) => {
 
     const { type, senderUid: _, targetUid: __, targetType, ...data } = body;
     const messageData = { ...data };
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
     if (type === 'image') {
-      const baseUrl = `${req.protocol}://${req.get('host')}`;
       const normalizeImageUrl = async (value) => {
         const parsed = parseImageDataUrl(value);
         if (!parsed) return value;
@@ -350,6 +517,84 @@ router.post('/send', authenticate, async (req, res) => {
           }
         }
       }
+    }
+    if (type === 'file') {
+      const rawDataUrl =
+        typeof messageData.dataUrl === 'string' ? messageData.dataUrl.trim() : '';
+      const rawUrl =
+        typeof messageData.url === 'string' ? messageData.url.trim() : '';
+      const safeName = sanitizeFilename(messageData.name || 'file') || 'file';
+      let mime =
+        typeof messageData.mime === 'string' && messageData.mime.trim()
+          ? messageData.mime.trim()
+          : 'application/octet-stream';
+      let filename = '';
+      let size = 0;
+
+      if (rawDataUrl) {
+        const parsed = parseDataUrl(rawDataUrl);
+        if (!parsed) {
+          res.status(400).json({ success: false, message: 'Invalid file data.' });
+          return;
+        }
+        if (parsed.buffer.length > MAX_FILE_BYTES) {
+          res.status(400).json({ success: false, message: 'File too large.' });
+          return;
+        }
+        mime = parsed.mime || mime;
+        const stored = await storeUserFileBuffer(
+          parsed.buffer,
+          senderUid,
+          safeName,
+          mime
+        );
+        filename = stored.filename;
+        size = parsed.buffer.length;
+      } else if (rawUrl) {
+        let parsedUrl = null;
+        try {
+          parsedUrl = new URL(rawUrl, baseUrl);
+        } catch {
+          parsedUrl = null;
+        }
+        if (!parsedUrl || !parsedUrl.pathname.startsWith('/uploads/userfile/')) {
+          res.status(400).json({ success: false, message: 'Invalid file url.' });
+          return;
+        }
+        const relativePath = decodeURIComponent(
+          parsedUrl.pathname.replace('/uploads/userfile/', '')
+        );
+        const sourcePath = path.join(USERFILE_DIR, relativePath);
+        if (!(await fileExists(sourcePath))) {
+          res.status(404).json({ success: false, message: 'Source file missing.' });
+          return;
+        }
+        const stat = await fs.stat(sourcePath);
+        size = stat.size;
+        if (size > MAX_FILE_BYTES) {
+          res.status(400).json({ success: false, message: 'File too large.' });
+          return;
+        }
+        const stored = await storeUserFileFromPath(
+          sourcePath,
+          senderUid,
+          safeName,
+          mime
+        );
+        filename = stored.filename;
+      } else {
+        res.status(400).json({ success: false, message: 'Missing file data.' });
+        return;
+      }
+
+      const meta = buildFileMeta(safeName, size, mime);
+      messageData.name = meta.name;
+      messageData.size = meta.size;
+      messageData.mime = meta.mime;
+      messageData.uploadedAt = meta.uploadedAt;
+      messageData.expiresAt = meta.expiresAt;
+      messageData.url = `${baseUrl}/uploads/userfile/${senderUid}/${filename}`;
+      delete messageData.dataUrl;
     }
     const createdAt = new Date().toISOString();
     const createdAtMs = Date.now();

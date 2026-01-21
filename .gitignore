@@ -12,6 +12,7 @@ backend/data/*.db
 backend/data/*.json
 backend/data/uploads/
 backend/data/images/
+backend/data/userfile/
 backend/data/**/*.png
 backend/data/**/*.jpg
 backend/data/**/*.jpeg

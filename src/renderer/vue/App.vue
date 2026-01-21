@@ -249,7 +249,8 @@
                                 <div v-for="msg in displayMessages" :key="msg.id" class="bubble" :class="{
                                     self: msg.senderUid === auth.uid,
                                     error: msg.error,
-                                    'image-only': isImageOnlyMessage(msg)
+                                    'image-only': isImageOnlyMessage(msg),
+                                    'file-only': msg.type === 'file'
                                 }">
                                     <span v-if="msg.error" class="bubble-error-dot"></span>
                                     <div class="bubble-name">
@@ -265,6 +266,25 @@
                                             </div>
                                             <div v-if="getMessageImageCaption(msg)" class="bubble-caption">
                                                 {{ getMessageImageCaption(msg) }}
+                                            </div>
+                                        </template>
+                                        <template v-else-if="msg.type === 'file'">
+                                            <div class="bubble-file">
+                                                <div class="bubble-file-icon">&#xE8A5;</div>
+                                                <div class="bubble-file-meta">
+                                                    <div class="bubble-file-name">{{ getMessageFileName(msg) }}</div>
+                                                    <div class="bubble-file-size">{{ formatBytes(getMessageFileSize(msg))
+                                                    }}</div>
+                                                </div>
+                                                <button v-if="getMessageFileUrl(msg) && !isFileExpired(msg)"
+                                                    class="bubble-file-link" type="button"
+                                                    @click="downloadFileMessage(msg)">
+                                                    {{ hasDownloadedFile(msg) ? '打开' : '下载' }}
+                                                </button>
+                                                <span v-else-if="isFileExpired(msg)" class="bubble-file-expired">
+                                                    已过期
+                                                </span>
+                                                <span v-else class="bubble-file-status">上传中</span>
                                             </div>
                                         </template>
                                         <span v-else>{{ renderMessage(msg) }}</span>
@@ -307,9 +327,11 @@
                             <button class="tool-icon-btn" title="剪刀">
                                 <span class="tool-glyph">&#xE8C6;</span>
                             </button>
-                            <button class="tool-icon-btn" title="文件">
+                            <button class="tool-icon-btn" title="文件" @click="triggerFileSelect">
                                 <span class="tool-glyph">&#xE8A5;</span>
                             </button>
+                            <input ref="fileInputRef" class="composer-file-input" type="file"
+                                @change="handleFileSelect" />
                             <input ref="imageInputRef" class="composer-image-input" type="file" accept="image/*"
                                 multiple
                                 @change="handleImageSelect" />
@@ -544,6 +566,34 @@
                 </div>
             </div>
         </transition>
+        <transition name="file-modal" appear>
+            <div v-show="isFileModalOpen" class="file-modal">
+                <div class="file-modal__backdrop" @click="closeFileModal"></div>
+                <div class="file-modal__panel">
+                    <div class="file-modal__header">
+                        <div class="file-modal__title">
+                            发送给 {{ activeFriend?.username || '好友' }}
+                        </div>
+                        <button class="file-modal__close" type="button" @click="closeFileModal">×</button>
+                    </div>
+                    <div class="file-modal__body">
+                        <div class="file-modal__card">
+                            <div class="file-modal__icon">&#xE8A5;</div>
+                            <div class="file-modal__meta">
+                                <div class="file-modal__name">{{ fileDraft?.name || '未命名文件' }}</div>
+                                <div class="file-modal__size">{{ formatBytes(fileDraft?.size) }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="file-modal__footer">
+                        <button class="file-modal__send" type="button" :disabled="!canSendFile"
+                            @click="sendFileMessage">
+                            发送(1)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </transition>
     </div>
 </template>
 
@@ -613,7 +663,12 @@ const composerResizeStart = ref({ y: 0, height: 0 });
 const composerTextareaRef = ref(null);
 const avatarInputRef = ref(null);
 const imageInputRef = ref(null);
+const fileInputRef = ref(null);
 const draftImages = ref([]);
+const fileDraft = ref(null);
+const isFileModalOpen = ref(false);
+const downloadedFileByUrl = ref({});
+const checkedFileUrls = new Set();
 const isCropOpen = ref(false);
 const cropSource = ref('');
 const cropScale = ref(1);
@@ -678,6 +733,8 @@ const handleLogout = () => {
 const MAX_AVATAR_BYTES = 20 * 1024 * 1024;
 const CROP_SIZE = 240;
 const MAX_CHAT_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_CHAT_FILE_BYTES = 20 * 1024 * 1024;
+const FILE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 const LIST_MENU_WIDTH = 220;
 const LIST_MENU_HEIGHT = 6 * 38;
 const LIST_MENU_MARGIN = 12;
@@ -695,6 +752,22 @@ const loadUidList = (key) => {
 const saveUidList = (key, list) => {
     try {
         localStorage.setItem(key, JSON.stringify(list));
+    } catch {}
+};
+
+const loadDownloadMap = () => {
+    try {
+        const raw = localStorage.getItem('vp_downloaded_files');
+        const parsed = JSON.parse(raw || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+        return {};
+    }
+};
+
+const saveDownloadMap = (map) => {
+    try {
+        localStorage.setItem('vp_downloaded_files', JSON.stringify(map || {}));
     } catch {}
 };
 
@@ -727,10 +800,22 @@ const triggerImageSelect = () => {
     imageInputRef.value?.click?.();
 };
 
+const triggerFileSelect = () => {
+    fileInputRef.value?.click?.();
+};
+
 const clearDraftImages = () => {
     draftImages.value = [];
     if (imageInputRef.value) {
         imageInputRef.value.value = '';
+    }
+};
+
+const clearFileDraft = () => {
+    fileDraft.value = null;
+    isFileModalOpen.value = false;
+    if (fileInputRef.value) {
+        fileInputRef.value.value = '';
     }
 };
 
@@ -941,6 +1026,27 @@ const handleAvatarChange = async (event) => {
     }
 };
 
+const setDraftFile = async (file) => {
+    if (!activeFriend.value?.uid) {
+        statusText.value = '请先选择好友';
+        return;
+    }
+    if (file.size > MAX_CHAT_FILE_BYTES) {
+        statusText.value = '文件大小需小于 20MB';
+        return;
+    }
+    const dataUrl = await readFileAsDataUrl(file);
+    if (typeof dataUrl === 'string') {
+        fileDraft.value = {
+            name: file.name || '未命名文件',
+            size: file.size,
+            type: file.type || 'application/octet-stream',
+            dataUrl
+        };
+        isFileModalOpen.value = true;
+    }
+};
+
 const setDraftImage = async (file) => {
     if (!file.type?.startsWith('image/')) {
         statusText.value = '请上传图片格式文件';
@@ -953,6 +1059,20 @@ const setDraftImage = async (file) => {
     const dataUrl = await readFileAsDataUrl(file);
     if (typeof dataUrl === 'string') {
         draftImages.value = [...draftImages.value, dataUrl];
+    }
+};
+
+const handleFileSelect = async (event) => {
+    const file = event.target?.files?.[0];
+    if (!file) return;
+    try {
+        await setDraftFile(file);
+    } catch {
+        statusText.value = '文件读取失败';
+    } finally {
+        if (event.target) {
+            event.target.value = '';
+        }
     }
 };
 
@@ -977,15 +1097,18 @@ const handleComposerPaste = async (event) => {
     if (!items) return;
     let handled = false;
     for (const item of items) {
-        if (item.kind === 'file' && item.type?.startsWith('image/')) {
-            const file = item.getAsFile();
-            if (!file) continue;
-            handled = true;
-            try {
+        if (item.kind !== 'file') continue;
+        const file = item.getAsFile();
+        if (!file) continue;
+        handled = true;
+        try {
+            if (item.type?.startsWith('image/')) {
                 await setDraftImage(file);
-            } catch {
-                statusText.value = '图片读取失败';
+            } else {
+                await setDraftFile(file);
             }
+        } catch {
+            statusText.value = item.type?.startsWith('image/') ? '图片读取失败' : '文件读取失败';
         }
     }
     if (handled) {
@@ -1008,6 +1131,10 @@ const closeCropper = () => {
     if (cropDragging.value) {
         stopCropDrag();
     }
+};
+
+const closeFileModal = () => {
+    clearFileDraft();
 };
 
 const clampCropOffset = (offset, scale) => {
@@ -1769,6 +1896,14 @@ const canSend = computed(() => {
     );
 });
 
+const canSendFile = computed(() => {
+    return (
+        !!auth.value.token &&
+        !!activeFriend.value?.uid &&
+        !!fileDraft.value?.dataUrl
+    );
+});
+
 const activeFriendOnline = computed(() => {
     if (!activeFriend.value) return false;
     return activeFriend.value.online === true;
@@ -1780,6 +1915,15 @@ const formatTime = (value) => {
     return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 };
 
+const formatBytes = (value) => {
+    const size = Number(value);
+    if (!Number.isFinite(size) || size <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const index = Math.min(units.length - 1, Math.floor(Math.log(size) / Math.log(1024)));
+    const num = size / Math.pow(1024, index);
+    return `${num.toFixed(num >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+};
+
 const renderMessage = (msg) => {
     if (msg.type === 'text') {
         return sanitizeText(msg.data?.content || '');
@@ -1788,7 +1932,124 @@ const renderMessage = (msg) => {
     if (msg.type === 'video') return '[视频消息]';
     if (msg.type === 'voice') return '[语音消息]';
     if (msg.type === 'gif') return '[GIF 表情]';
+    if (msg.type === 'file') return '[文件]';
     return '[未知消息]';
+};
+
+const getMessageFile = (msg) => {
+    if (msg?.type !== 'file') return {};
+    return msg.data || {};
+};
+
+const getMessageFileName = (msg) => {
+    const name = getMessageFile(msg).name;
+    return sanitizeText(typeof name === 'string' ? name : '未知文件');
+};
+
+const getMessageFileSize = (msg) => {
+    const size = getMessageFile(msg).size;
+    return Number.isFinite(Number(size)) ? Number(size) : 0;
+};
+
+const getMessageFileUrl = (msg) => {
+    const url = getMessageFile(msg).url;
+    return typeof url === 'string' ? url.trim() : '';
+};
+
+const getDownloadedPath = (msg) => {
+    const url = getMessageFileUrl(msg);
+    if (!url) return '';
+    return downloadedFileByUrl.value[url] || '';
+};
+
+const hasDownloadedFile = (msg) => !!getDownloadedPath(msg);
+
+const isFileExpired = (msg) => {
+    if (msg?.type !== 'file') return false;
+    const expiresAt = msg.data?.expiresAt;
+    if (expiresAt) {
+        const parsed = Date.parse(expiresAt);
+        return Number.isFinite(parsed) && parsed <= Date.now();
+    }
+    const uploadedAt = msg.data?.uploadedAt;
+    if (uploadedAt) {
+        const parsed = Date.parse(uploadedAt);
+        return Number.isFinite(parsed) && parsed + FILE_TTL_MS <= Date.now();
+    }
+    return false;
+};
+
+const refreshDownloadStatus = async (msg) => {
+    const url = getMessageFileUrl(msg);
+    if (!url || !window.electronAPI?.checkDownloadedFile) return;
+    if (isFileExpired(msg)) return;
+    const name = getMessageFileName(msg);
+    const currentPath = downloadedFileByUrl.value[url] || '';
+    try {
+        const result = await window.electronAPI.checkDownloadedFile({
+            name,
+            path: currentPath
+        });
+        if (result?.path) {
+            const next = {
+                ...downloadedFileByUrl.value,
+                [url]: result.path
+            };
+            downloadedFileByUrl.value = next;
+            saveDownloadMap(next);
+        } else if (currentPath) {
+            const next = { ...downloadedFileByUrl.value };
+            delete next[url];
+            downloadedFileByUrl.value = next;
+            saveDownloadMap(next);
+        }
+    } catch {}
+};
+
+const downloadFileMessage = async (msg) => {
+    const url = getMessageFileUrl(msg);
+    if (!url) return;
+    if (isFileExpired(msg)) {
+        statusText.value = '文件已过期';
+        return;
+    }
+    const name = getMessageFileName(msg);
+    const existingPath = getDownloadedPath(msg);
+    if (existingPath && window.electronAPI?.openPath) {
+        try {
+            await window.electronAPI.openPath(existingPath);
+        } catch {
+            const next = { ...downloadedFileByUrl.value };
+            delete next[url];
+            downloadedFileByUrl.value = next;
+            saveDownloadMap(next);
+            statusText.value = '文件打开失败，已重新下载';
+        }
+        if (getDownloadedPath(msg)) return;
+    }
+    if (window.electronAPI?.downloadFile) {
+        try {
+            statusText.value = '正在下载文件...';
+            const result = await window.electronAPI.downloadFile({ url, name });
+            if (result?.path) {
+                const next = {
+                    ...downloadedFileByUrl.value,
+                    [url]: result.path
+                };
+                downloadedFileByUrl.value = next;
+                saveDownloadMap(next);
+            }
+            statusText.value = '文件已保存到下载文件夹';
+        } catch {
+            statusText.value = '文件下载失败';
+        }
+        return;
+    }
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name || '';
+    link.rel = 'noopener';
+    link.click();
 };
 
 const getMessageImageUrls = (msg) => {
@@ -2191,6 +2452,30 @@ const sendChatEntry = async ({ type, data, payload }) => {
     }
 };
 
+const sendFileMessage = async () => {
+    if (!canSendFile.value || !fileDraft.value) return;
+    const payload = {
+        name: fileDraft.value.name,
+        size: fileDraft.value.size,
+        mime: fileDraft.value.type,
+        dataUrl: fileDraft.value.dataUrl
+    };
+    const data = {
+        name: fileDraft.value.name,
+        size: fileDraft.value.size,
+        mime: fileDraft.value.type,
+        url: ''
+    };
+    const ok = await sendChatEntry({
+        type: 'file',
+        data,
+        payload
+    });
+    if (ok) {
+        clearFileDraft();
+    }
+};
+
 const sendMessage = async () => {
     if (!canSend.value) return;
     showSendMenu.value = false;
@@ -2286,6 +2571,7 @@ onMounted(async () => {
     });
     await loadAuth();
     loadFriendPreferences();
+    downloadedFileByUrl.value = loadDownloadMap();
     await loadProfile();
     await loadFriends();
     await loadRequests();
@@ -2304,6 +2590,20 @@ watch(
             connectWebSocket();
         }
     }
+);
+
+watch(
+    displayMessages,
+    (items) => {
+        items.forEach((msg) => {
+            if (msg.type !== 'file') return;
+            const url = getMessageFileUrl(msg);
+            if (!url || checkedFileUrls.has(url)) return;
+            checkedFileUrls.add(url);
+            void refreshDownloadStatus(msg);
+        });
+    },
+    { immediate: true }
 );
 
 onBeforeUnmount(() => {
@@ -2860,6 +3160,120 @@ select:focus {
     width: 100%;
 }
 
+.file-modal {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    z-index: 4000;
+}
+
+.file-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.35);
+    backdrop-filter: blur(12px);
+}
+
+.file-modal__panel {
+    position: relative;
+    width: min(460px, 92vw);
+    border-radius: 18px;
+    background: #3a3a3a;
+    color: #f9fafb;
+    box-shadow: 0 24px 60px rgba(17, 24, 39, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    z-index: 1;
+}
+
+.file-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    font-weight: 600;
+}
+
+.file-modal__title {
+    font-size: 16px;
+}
+
+.file-modal__close {
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.file-modal__body {
+    padding: 6px 20px 18px;
+}
+
+.file-modal__card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.file-modal__icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(37, 99, 235, 0.25);
+    color: #dbeafe;
+    display: grid;
+    place-items: center;
+    font-family: "Segoe MDL2 Assets";
+    font-size: 18px;
+}
+
+.file-modal__meta {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.file-modal__name {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-modal__size {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.file-modal__footer {
+    padding: 0 20px 18px;
+}
+
+.file-modal__send {
+    width: 100%;
+    border: none;
+    border-radius: 14px;
+    padding: 12px 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: #0a6cff;
+    cursor: pointer;
+    box-shadow: 0 10px 20px rgba(10, 108, 255, 0.35);
+}
+
+.file-modal__send:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
 .profile-modal-enter-active,
 .profile-modal-leave-active {
     transition: opacity 160ms ease-out;
@@ -2884,6 +3298,21 @@ select:focus {
 .profile-modal-leave-to .profile-modal__backdrop {
     opacity: 0;
     backdrop-filter: blur(2px);
+}
+
+.file-modal-enter-active,
+.file-modal-leave-active {
+    transition: opacity 0.2s ease;
+}
+
+.file-modal-enter-from,
+.file-modal-leave-to {
+    opacity: 0;
+}
+
+.file-modal-enter-from .file-modal__panel,
+.file-modal-leave-to .file-modal__panel {
+    transform: translateY(10px) scale(0.98);
 }
 
 .user-name {
@@ -3709,6 +4138,13 @@ select:focus {
     box-shadow: none;
 }
 
+.bubble.file-only {
+    padding: 0;
+    background: unset!important;
+    box-shadow: none;
+    color: inherit!important;
+}
+
 .bubble.self {
     align-self: flex-end;
     background: #2b6cb0;
@@ -3756,6 +4192,91 @@ select:focus {
     display: block;
 }
 
+.bubble-file {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(30, 30, 30, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    box-shadow:  4px 8px 8px 4px rgba(0,0,0,0.15);
+}
+
+.bubble.self .bubble-file {
+    width: 200px;
+    height: 80px;
+    background: rgba(30, 30, 30, 0.6);
+    border-color: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(12px);
+}
+
+.bubble-file-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: rgba(59, 130, 246, 0.15);
+    color: #1d4ed8;
+    display: grid;
+    place-items: center;
+    font-family: "Segoe MDL2 Assets";
+    font-size: 16px;
+}
+
+.bubble.self .bubble-file-icon {
+    background: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+}
+
+.bubble-file-meta {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.bubble-file-name {
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: white!important;
+}
+
+.bubble-file-size,
+.bubble-file-status {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+.bubble.self .bubble-file-size,
+.bubble.self .bubble-file-status {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.bubble-file-link {
+    font-size: 12px;
+    font-weight: 600;
+    color: #2563eb;
+    text-decoration: none;
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+}
+
+.bubble-file-expired {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.bubble.self .bubble-file-link {
+    color: #ffffff;
+}
+
 .bubble-image-grid {
     display: flex;
     flex-direction: column;
@@ -3786,7 +4307,7 @@ select:focus {
     border-top: 1px solid var(--line);
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 0px;
     flex: 0 0 auto;
     max-height: 360px;
     overflow: hidden;
@@ -3973,6 +4494,10 @@ select:focus {
 }
 
 .composer-image-input {
+    display: none;
+}
+
+.composer-file-input {
     display: none;
 }
 

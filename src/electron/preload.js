@@ -19,5 +19,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     windowClose: () => ipcRenderer.send('window-close'),
     windowMin: () => ipcRenderer.send('window-min'),
     windowMax: () => ipcRenderer.send('window-max'),
-    windowFlash: () => ipcRenderer.send('window-flash')
+    windowFlash: () => ipcRenderer.send('window-flash'),
+    downloadFile: (payload) => ipcRenderer.invoke('download-file', payload),
+    openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
+    checkDownloadedFile: (payload) => ipcRenderer.invoke('check-downloaded-file', payload)
 });

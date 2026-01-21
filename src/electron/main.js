@@ -1,9 +1,11 @@
 import electron from 'electron';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
+import https from 'https';
 import { fileURLToPath } from 'url';
 
-const { app, BrowserWindow, ipcMain, Menu } = electron.default || electron;
+const { app, BrowserWindow, ipcMain, Menu, shell } = electron.default || electron;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -246,6 +248,55 @@ const logoutToLogin = () => {
     }
 };
 
+const sanitizeFilename = (value) => {
+    const base = path.basename(String(value || '').trim());
+    if (!base) return 'file';
+    return base.replace(/[\\/:*?"<>|]+/g, '_');
+};
+
+const ensureUniquePath = (dir, name) => {
+    const parsed = path.parse(name);
+    let candidate = path.join(dir, name);
+    let counter = 1;
+    while (fs.existsSync(candidate)) {
+        candidate = path.join(dir, `${parsed.name} (${counter})${parsed.ext}`);
+        counter += 1;
+    }
+    return candidate;
+};
+
+const downloadToPath = (url, targetPath, redirectCount = 0) =>
+    new Promise((resolve, reject) => {
+        if (redirectCount > 5) {
+            reject(new Error('Too many redirects'));
+            return;
+        }
+        const client = url.startsWith('https:') ? https : http;
+        const request = client.get(url, (res) => {
+            const status = res.statusCode || 0;
+            if (status >= 300 && status < 400 && res.headers.location) {
+                const nextUrl = res.headers.location.startsWith('http')
+                    ? res.headers.location
+                    : new URL(res.headers.location, url).toString();
+                res.resume();
+                downloadToPath(nextUrl, targetPath, redirectCount + 1)
+                    .then(resolve)
+                    .catch(reject);
+                return;
+            }
+            if (status !== 200) {
+                res.resume();
+                reject(new Error(`Download failed (${status})`));
+                return;
+            }
+            const fileStream = fs.createWriteStream(targetPath);
+            res.pipe(fileStream);
+            fileStream.on('finish', () => fileStream.close(resolve));
+            fileStream.on('error', reject);
+        });
+        request.on('error', reject);
+    });
+
 ipcMain.handle('save-file', async (event, content) => {
     fs.writeFileSync(DATA_PATH, content, 'utf-8');
     return true;
@@ -300,6 +351,44 @@ ipcMain.handle('get-auth-token', async () => {
         province: authProvince,
         region: authRegion
     };
+});
+
+ipcMain.handle('download-file', async (_, payload = {}) => {
+    const url = typeof payload.url === 'string' ? payload.url.trim() : '';
+    if (!url || !/^https?:\/\//i.test(url)) {
+        throw new Error('Invalid download url');
+    }
+    const name = sanitizeFilename(payload.name || 'file');
+    const downloadDir = app.getPath('downloads');
+    const targetPath = ensureUniquePath(downloadDir, name);
+    await downloadToPath(url, targetPath);
+    return { path: targetPath };
+});
+
+ipcMain.handle('open-path', async (_, targetPath = '') => {
+    const cleaned = typeof targetPath === 'string' ? targetPath.trim() : '';
+    if (!cleaned) {
+        throw new Error('Invalid path');
+    }
+    const result = await shell.openPath(cleaned);
+    if (result) {
+        throw new Error(result);
+    }
+    return true;
+});
+
+ipcMain.handle('check-downloaded-file', async (_, payload = {}) => {
+    const name = sanitizeFilename(payload.name || 'file');
+    const hintedPath = typeof payload.path === 'string' ? payload.path.trim() : '';
+    if (hintedPath && fs.existsSync(hintedPath)) {
+        return { path: hintedPath };
+    }
+    const downloadDir = app.getPath('downloads');
+    const directPath = path.join(downloadDir, name);
+    if (fs.existsSync(directPath)) {
+        return { path: directPath };
+    }
+    return { path: '' };
 });
 
 ipcMain.on('login-success', () => {

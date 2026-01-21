@@ -46,65 +46,65 @@ const routeMeta = [
   {
     method: 'GET',
     path: '/',
-    label: '首页',
-    note: '服务根路径，返回后端管理页首页内容。',
-    templates: [{ name: '访问首页', body: null, hint: '无 body' }],
+    label: 'Root',
+    note: 'Service root path that returns the admin index page.',
+    templates: [{ name: 'Open root', body: null, hint: 'No body' }],
   },
   {
     method: 'GET',
     path: '/admin',
-    label: '管理页',
-    note: '后端管理入口页。',
-    templates: [{ name: '打开管理页', body: null, hint: '无 body' }],
+    label: 'Admin',
+    note: 'Backend admin page.',
+    templates: [{ name: 'Open admin', body: null, hint: 'No body' }],
   },
   {
     method: 'GET',
     path: '/resource/*',
-    label: '静态资源',
-    note: '访问后端静态资源目录中的文件。',
+    label: 'Static resource',
+    note: 'Read a file from backend static resource folder.',
     templates: [
       {
-        name: '示例文件',
+        name: 'Example file',
         body: null,
         path: '/resource/example.png',
-        hint: '按实际文件名替换',
+        hint: 'Replace with actual filename',
       },
     ],
   },
   {
     method: 'POST',
     path: '/api/register',
-    label: '注册',
-    note: '注册新账号，系统会分配 uid。',
+    label: 'Register',
+    note: 'Create a new account; server allocates uid.',
     templates: [
       {
-        name: '快速注册',
+        name: 'Quick register',
         body: { username: 'demo_user', password: 'demo_pass_123' },
-        hint: '密码 8-64 位',
+        hint: 'Password length 8-64',
       },
     ],
   },
   {
     method: 'POST',
     path: '/api/login',
-    label: '登录',
-    note: '登录已有账号。',
+    label: 'Login',
+    note: 'Login with existing account.',
     templates: [
       {
-        name: '普通登录',
+        name: 'Standard login',
         body: { username: 'demo_user', password: 'demo_pass_123' },
-        hint: '账号名会被转小写',
+        hint: 'Username is lowercased',
       },
     ],
   },
   {
     method: 'POST',
     path: '/api/chat/send',
-    label: '发送消息',
-    note: '需要 token，发送 chat 消息，支持私聊/群聊。',
+    label: 'Send chat',
+    note: 'Send chat message with token.',
     templates: [
       {
-        name: '文本消息',
+        name: 'Text message',
         body: {
           senderUid: 100000000,
           targetUid: 100000001,
@@ -112,10 +112,10 @@ const routeMeta = [
           type: 'text',
           content: 'Hello',
         },
-        hint: '需带 Authorization: Bearer <token>',
+        hint: 'Authorization: Bearer <token>',
       },
       {
-        name: '图片消息',
+        name: 'Image message',
         body: {
           senderUid: 100000000,
           targetUid: 100000001,
@@ -123,10 +123,23 @@ const routeMeta = [
           type: 'image',
           url: 'https://example.com/image.png',
         },
-        hint: '需带 Authorization: Bearer <token>',
+        hint: 'Authorization: Bearer <token>',
       },
       {
-        name: '语音消息',
+        name: 'File message',
+        body: {
+          senderUid: 100000000,
+          targetUid: 100000001,
+          targetType: 'private',
+          type: 'file',
+          name: 'example.pdf',
+          size: 2048,
+          dataUrl: 'data:application/pdf;base64,',
+        },
+        hint: 'Authorization: Bearer <token>',
+      },
+      {
+        name: 'Voice message',
         body: {
           senderUid: 100000000,
           targetUid: 100000001,
@@ -135,109 +148,109 @@ const routeMeta = [
           url: 'https://example.com/audio.mp3',
           duration: 2.4,
         },
-        hint: '需带 Authorization: Bearer <token>',
+        hint: 'Authorization: Bearer <token>',
       },
     ],
   },
   {
     method: 'GET',
     path: '/api/chat/get',
-    label: '拉取消息',
-    note: '需要 token，需指定 targetType 与 targetUid。',
+    label: 'Fetch chat',
+    note: 'Fetch chat messages by target.',
     templates: [
       {
-        name: '私聊记录',
+        name: 'Private chat',
         body: { targetType: 'private', targetUid: 100000001 },
-        hint: '需带 Authorization: Bearer <token>',
+        hint: 'Authorization: Bearer <token>',
       },
       {
-        name: '私聊文本',
+        name: 'Private text messages',
         body: { targetType: 'private', targetUid: 100000001, type: 'text' },
-        hint: '也可用 ?targetType=private&targetUid=100000001&type=text',
+        hint: 'Or use query params',
       },
     ],
   },
   {
     method: 'DELETE',
     path: '/api/chat/del',
-    label: '删除消息',
-    note: '根据 id 删除指定消息。',
+    label: 'Delete chat',
+    note: 'Delete a message by id.',
     templates: [
       {
-        name: '删除指定消息',
+        name: 'Delete message',
         body: { id: 'message-id' },
-        hint: '替换为实际消息 id',
+        hint: 'Replace with actual id',
       },
     ],
   },
   {
     method: 'POST',
     path: '/api/friends/add',
-    label: '添加好友',
-    note: '需要 token，支持 friendUid 或 friendUsername。',
+    label: 'Add friend',
+    note: 'Add friend by uid or username.',
     templates: [
       {
-        name: '按 uid 添加',
+        name: 'Add by uid',
         body: { friendUid: 100000001 },
-        hint: '需带 Authorization: Bearer <token>',
+        hint: 'Authorization: Bearer <token>',
       },
       {
-        name: '按用户名添加',
+        name: 'Add by username',
         body: { friendUsername: 'demo_user' },
-        hint: '需带 Authorization: Bearer <token>',
+        hint: 'Authorization: Bearer <token>',
       },
     ],
   },
   {
     method: 'DELETE',
     path: '/api/friends/remove',
-    label: '删除好友',
-    note: '需要 token，支持 friendUid 或 friendUsername。',
+    label: 'Remove friend',
+    note: 'Remove friend by uid or username.',
     templates: [
       {
-        name: '按 uid 删除',
+        name: 'Remove by uid',
         body: { friendUid: 100000001 },
-        hint: '需带 Authorization: Bearer <token>',
+        hint: 'Authorization: Bearer <token>',
       },
       {
-        name: '按用户名删除',
+        name: 'Remove by username',
         body: { friendUsername: 'demo_user' },
-        hint: '需带 Authorization: Bearer <token>',
+        hint: 'Authorization: Bearer <token>',
       },
     ],
   },
   {
     method: 'GET',
     path: '/api/friends/list',
-    label: '好友列表',
-    note: '需要 token，返回当前用户好友列表。',
+    label: 'Friend list',
+    note: 'Return current user friend list.',
     templates: [
       {
-        name: '查看好友',
+        name: 'List friends',
         body: null,
-        hint: '需带 Authorization: Bearer <token>',
+        hint: 'Authorization: Bearer <token>',
       },
     ],
   },
   {
     method: 'GET',
     path: '/api/friends/search',
-    label: '搜索用户',
-    note: '需要 token，按 uid 搜索用户资料。',
+    label: 'Search user',
+    note: 'Search user by uid.',
     templates: [
       {
-        name: '按 uid 搜索',
+        name: 'Search by uid',
         body: { uid: 100000001 },
-        hint: '需带 Authorization: Bearer <token>',
+        hint: 'Authorization: Bearer <token>',
       },
     ],
   },
   {
     method: 'GET',
     path: '/api/routes',
-    label: '接口列表',
-    note: '返回后端可用路径与模板。',
-    templates: [{ name: '查看接口列表', body: null, hint: '无 body' }],
+    label: 'Routes',
+    note: 'List backend routes and templates.',
+    templates: [{ name: 'List routes', body: null, hint: 'No body' }],
   },
 ];
 
@@ -335,9 +348,9 @@ const buildRouteResponse = (target) => {
     }
     return {
       ...route,
-      label: '未命名接口',
-      note: '未配置模板，请自行填写请求参数。',
-      templates: [{ name: '空模板', body: null, hint: '无 body' }],
+      label: 'Unnamed',
+      note: 'No template configured.',
+      templates: [{ name: 'Empty template', body: null, hint: 'No body' }],
     };
   });
 
@@ -368,6 +381,7 @@ app.get('/api/routes', (req, res) => {
 
 app.use('/resource', express.static(path.join(__dirname, 'resource')));
 app.use('/uploads/images', express.static(path.join(__dirname, 'data', 'images')));
+app.use('/uploads/userfile', express.static(path.join(__dirname, 'data', 'userfile')));
 app.use('/admin', express.static(path.join(__dirname, 'index.html')));
 
 app.use('/api', authRouter);
