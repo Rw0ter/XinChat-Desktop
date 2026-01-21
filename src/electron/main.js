@@ -286,7 +286,8 @@ ipcMain.on('open-image-preview', (_, url) => {
     if (typeof url !== 'string' || !url.trim()) return;
     const targetUrl = url.trim();
     const isDataImage = targetUrl.startsWith('data:image/');
-    if (!isDataImage) {
+    const isRemoteImage = /^https?:\/\//i.test(targetUrl);
+    if (!isDataImage && !isRemoteImage) {
         return;
     }
     const previewWin = new BrowserWindow({
