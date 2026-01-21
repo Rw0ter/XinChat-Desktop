@@ -2904,8 +2904,8 @@ select:focus {
 .contacts-sidebar {
     display: flex;
     flex-direction: column;
-    gap: 18px;
-    height: 100%;
+    gap: 10px;
+    height: 85vh;
     min-height: 0;
 }
 
@@ -2921,7 +2921,7 @@ select:focus {
     gap: 10px;
     background: rgba(255, 255, 255, 0.6);
     border-radius: 16px;
-    padding: 8px 12px;
+    padding: 0px 12px;
     border: 1px solid rgba(15, 23, 42, 0.12);
     width: 270px;
 }
@@ -2951,7 +2951,7 @@ select:focus {
     border: 1px solid rgba(255, 255, 255, 0.2);
     background: rgba(31, 41, 55, 0.08);
     border-radius: 16px;
-    padding: 10px 12px;
+    padding: 7px 12px;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -2976,7 +2976,7 @@ select:focus {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 10px 12px;
+    padding: 7px 12px;
     border-radius: 14px;
     background: rgba(17, 24, 39, 0.08);
     border: 1px solid rgba(15, 23, 42, 0.1);
@@ -3011,7 +3011,7 @@ select:focus {
     grid-template-columns: 1fr 1fr;
     background: rgba(17, 24, 39, 0.08);
     border-radius: 14px;
-    padding: 4px;
+    padding: 1px;
     gap: 6px;
 }
 
@@ -3031,7 +3031,7 @@ select:focus {
 
 .contacts-list {
     display: grid;
-    gap: 10px;
+    gap: 5px;
     overflow-y: auto;
     padding-right: 4px;
     flex: 1;
@@ -3069,10 +3069,11 @@ select:focus {
 
 .contacts-group-header .chev {
     transition: transform 0.2s ease;
+    transform: rotate(0deg);
 }
 
 .contacts-group-header .chev.open {
-    transform: rotate(180deg);
+    transform: rotate(90deg);
 }
 
 .contacts-group-items {
@@ -3238,21 +3239,22 @@ select:focus {
 .list-context-menu {
     position: fixed;
     z-index: 3000;
-    width: 220px;
+    width: 180px;
     padding: 10px;
     border-radius: 14px;
-    background: linear-gradient(160deg, #ffffff, #f2f6ff);
+    background: transparent;
     border: 1px solid rgba(72, 147, 214, 0.2);
     box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
     display: grid;
-    gap: 6px;
+    gap: 1px;
+    background-color: white;
 }
 
 .list-context-item {
     border: none;
     border-radius: 10px;
     padding: 9px 12px;
-    background: rgba(72, 147, 214, 0.08);
+    background: transparent;
     color: #1e3a8a;
     font-size: 12px;
     font-weight: 600;
@@ -3261,16 +3263,17 @@ select:focus {
 }
 
 .list-context-item:hover {
-    background: rgba(72, 147, 214, 0.16);
+    background: #e5e7eb;
+    color: #111827;
 }
 
 .list-context-item.danger {
-    background: rgba(239, 68, 68, 0.12);
     color: #b91c1c;
 }
 
 .list-context-item.danger:hover {
-    background: rgba(239, 68, 68, 0.2);
+    background: #e5e7eb;
+    color: #991b1b;
 }
 
 
