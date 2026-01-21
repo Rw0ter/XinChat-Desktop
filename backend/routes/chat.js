@@ -318,20 +318,36 @@ router.post('/send', authenticate, async (req, res) => {
     const { type, senderUid: _, targetUid: __, targetType, ...data } = body;
     const messageData = { ...data };
     if (type === 'image') {
-      const rawUrl =
-        typeof messageData.url === 'string' ? messageData.url.trim() : '';
-      const fallbackUrl =
-        !rawUrl && typeof messageData.content === 'string'
-          ? messageData.content.trim()
-          : '';
-      const candidateUrl = rawUrl || fallbackUrl;
-      const parsed = parseImageDataUrl(candidateUrl);
-      if (parsed) {
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const normalizeImageUrl = async (value) => {
+        const parsed = parseImageDataUrl(value);
+        if (!parsed) return value;
         const { filename } = await storeImageBuffer(parsed.buffer, parsed.ext);
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
-        messageData.url = `${baseUrl}/uploads/images/${filename}`;
-        if (!rawUrl && messageData.content === candidateUrl) {
-          delete messageData.content;
+        return `${baseUrl}/uploads/images/${filename}`;
+      };
+      if (Array.isArray(messageData.urls)) {
+        const urls = [];
+        for (const item of messageData.urls) {
+          if (typeof item !== 'string') continue;
+          const cleaned = item.trim();
+          if (!cleaned) continue;
+          urls.push(await normalizeImageUrl(cleaned));
+        }
+        messageData.urls = urls;
+      } else {
+        const rawUrl =
+          typeof messageData.url === 'string' ? messageData.url.trim() : '';
+        const fallbackUrl =
+          !rawUrl && typeof messageData.content === 'string'
+            ? messageData.content.trim()
+            : '';
+        const candidateUrl = rawUrl || fallbackUrl;
+        if (candidateUrl) {
+          const normalized = await normalizeImageUrl(candidateUrl);
+          messageData.url = normalized;
+          if (!rawUrl && messageData.content === candidateUrl) {
+            delete messageData.content;
+          }
         }
       }
     }

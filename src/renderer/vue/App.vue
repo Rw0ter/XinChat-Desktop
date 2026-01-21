@@ -120,7 +120,9 @@
                     <div class="list">
                         <div class="section-title">私聊列表</div>
                         <button v-for="friend in filteredFriends" :key="friend.uid" class="list-item"
-                            :class="{ active: activeFriend?.uid === friend.uid }" @click="selectFriend(friend)">
+                            :class="{ active: activeFriend?.uid === friend.uid, pinned: isPinned(friend.uid) }"
+                            @click="selectFriend(friend)"
+                            @contextmenu.prevent="openListMenu(friend, $event)">
                             <div class="avatar">
                                 <img v-if="friend.avatar" :src="friend.avatar" alt="avatar" />
                                 <span v-else>{{ friend.username?.slice(0, 2).toUpperCase() }}</span>
@@ -129,9 +131,10 @@
                                 <div class="list-name">{{ friend.username }}</div>
                                 <div class="list-sub">UID {{ friend.uid }}</div>
                             </div>
-                            <span v-if="getUnreadCount(friend.uid)" class="list-badge">
-                                {{ formatUnread(getUnreadCount(friend.uid)) }}
-                            </span>
+                            <div class="list-badges">
+                                <span v-if="isMuted(friend.uid)" class="list-badge mute">免打扰</span>
+                                <span v-if="isUnread(friend.uid)" class="list-unread-dot"></span>
+                            </div>
                         </button>
                         <div v-if="!filteredFriends.length" class="empty-state">
                             暂无好友，请先添加好友。
@@ -168,38 +171,24 @@
                         <button class="contacts-tab">群聊</button>
                     </div>
                     <div class="contacts-list">
-                        <button class="contacts-row">
-                            <span>我的设备</span>
-                            <span class="count">1</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>机器人</span>
-                            <span class="count">1</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>特别关心</span>
-                            <span class="count">1/4</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>我的好友</span>
-                            <span class="count">{{ filteredFriends.length }}/{{ filteredFriends.length }}</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>朋友</span>
-                            <span class="count">0/0</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>家人</span>
-                            <span class="count">0/0</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>同学</span>
-                            <span class="count">0/1</span>
-                        </button>
-                        <button class="contacts-row">
-                            <span>么么哒</span>
-                            <span class="count">0/0</span>
-                        </button>
+                        <div v-for="group in contactGroups" :key="group.key" class="contacts-group">
+                            <button class="contacts-row contacts-group-header" type="button"
+                                @click="toggleContactGroup(group.key)">
+                                <span class="contacts-group-title">{{ group.label }}</span>
+                                <span class="contacts-group-meta">
+                                    <span class="count">{{ groupCountText(group) }}</span>
+                                    <span class="chev" :class="{ open: isContactGroupOpen(group.key) }">&#xE76C;</span>
+                                </span>
+                            </button>
+                            <div v-show="isContactGroupOpen(group.key)" class="contacts-group-items">
+                                <button v-for="friend in group.items" :key="friend.uid" class="contacts-friend"
+                                    type="button" @click="openContactChat(friend)">
+                                    <span class="contacts-friend-name">{{ friend.username }}</span>
+                                    <span class="contacts-friend-uid">UID {{ friend.uid }}</span>
+                                </button>
+                                <div v-if="!group.items.length" class="contacts-empty">暂无成员</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </aside>
@@ -243,7 +232,7 @@
                                             <div class="profile-detail">
                                                 城市：{{ friendProfileSource?.country || '未设置' }}{{
                                                     friendProfileSource?.province ? ` / ${friendProfileSource?.province}` :
-                                                '' }}{{ friendProfileSource?.region ? ` /
+                                                        '' }}{{ friendProfileSource?.region ? ` /
                                                 ${friendProfileSource?.region}` : '' }}
                                             </div>
                                         </div>
@@ -267,10 +256,13 @@
                                         {{ msg.senderUid === auth.uid ? displayName : activeFriend?.username }}
                                     </div>
                                     <div class="bubble-text">
-                                        <img v-if="msg.type === 'image' && getMessageImageUrl(msg)" class="bubble-image"
-                                            :src="getMessageImageUrl(msg)" alt="image"
-                                            @dblclick.stop="openImagePreview(getMessageImageUrl(msg))" />
                                         <template v-if="msg.type === 'image'">
+                                            <div class="bubble-image-grid">
+                                                <img v-for="(url, index) in getMessageImageUrls(msg)"
+                                                    :key="`${msg.id || 'img'}-${index}`" class="bubble-image"
+                                                    :src="url" alt="image"
+                                                    @dblclick.stop="openImagePreview(url)" />
+                                            </div>
                                             <div v-if="getMessageImageCaption(msg)" class="bubble-caption">
                                                 {{ getMessageImageCaption(msg) }}
                                             </div>
@@ -286,28 +278,32 @@
 
 
 
-                    <div class="composer">
+                    <div class="composer" :style="{ height: `${composerHeight}px` }">
+                        <div class="composer-resize-handle" @mousedown.prevent="startComposerResize"></div>
                         <div class="composer-toolbar">
                             <button ref="emojiButtonRef" class="tool-icon-btn" :class="{ 'is-active': showEmojiPicker }"
                                 title="表情" @click.stop="toggleEmojiPicker">
                                 <span class="tool-glyph">&#xE170;</span>
                             </button>
-                            <div v-if="showEmojiPicker" ref="emojiPickerRef" class="emoji-panel" @click.stop>
-                                <div class="emoji-tabs">
-                                    <button v-for="tab in emojiTabs" :key="tab.id" class="emoji-tab"
-                                        :class="{ active: emojiTab === tab.id }" type="button"
-                                        @click="emojiTab = tab.id">
-                                        {{ tab.label }}
-                                    </button>
+                            <teleport to="body">
+                                <div v-if="showEmojiPicker" ref="emojiPickerRef" class="emoji-panel"
+                                    :style="emojiPanelStyle" @click.stop>
+                                    <div class="emoji-tabs">
+                                        <button v-for="tab in emojiTabs" :key="tab.id" class="emoji-tab"
+                                            :class="{ active: emojiTab === tab.id }" type="button"
+                                            @click="emojiTab = tab.id">
+                                            {{ tab.label }}
+                                        </button>
+                                    </div>
+                                    <div v-if="currentEmojiList.length" class="emoji-grid">
+                                        <button v-for="item in currentEmojiList" :key="`${emojiTab}-${item}`"
+                                            class="emoji-btn" type="button" @click="addEmoji(item)">
+                                            {{ item }}
+                                        </button>
+                                    </div>
+                                    <div v-else class="emoji-empty">暂无表情</div>
                                 </div>
-                                <div v-if="currentEmojiList.length" class="emoji-grid">
-                                    <button v-for="item in currentEmojiList" :key="`${emojiTab}-${item}`"
-                                        class="emoji-btn" type="button" @click="addEmoji(item)">
-                                        {{ item }}
-                                    </button>
-                                </div>
-                                <div v-else class="emoji-empty">暂无表情</div>
-                            </div>
+                            </teleport>
                             <button class="tool-icon-btn" title="剪刀">
                                 <span class="tool-glyph">&#xE8C6;</span>
                             </button>
@@ -315,6 +311,7 @@
                                 <span class="tool-glyph">&#xE8A5;</span>
                             </button>
                             <input ref="imageInputRef" class="composer-image-input" type="file" accept="image/*"
+                                multiple
                                 @change="handleImageSelect" />
                             <button class="tool-icon-btn" title="图片" @click="triggerImageSelect">
                                 <span class="tool-glyph">&#xEB9F;</span>
@@ -330,13 +327,20 @@
                                 <span class="tool-glyph">&#xE712;</span>
                             </button>
                         </div>
-                        <div v-if="draftImage" class="composer-image-preview">
-                            <img :src="draftImage" alt="preview" />
-                            <button class="preview-remove" type="button" @click="clearDraftImage">×</button>
+                        <div class="composer-body">
+                            <div class="composer-input">
+                                <div v-if="draftImages.length" class="composer-image-list">
+                                    <div v-for="(url, index) in draftImages" :key="`${url}-${index}`"
+                                        class="composer-image-preview">
+                                        <img :src="url" alt="preview" />
+                                    </div>
+                                </div>
+                                <textarea v-model="draft" ref="composerTextareaRef" placeholder=""
+                                    @keydown.enter.exact.prevent="sendMessage" @keydown.enter.shift.stop
+                                    @keydown.backspace="handleComposerBackspace"
+                                    @paste="handleComposerPaste"></textarea>
+                            </div>
                         </div>
-                        <textarea v-model="draft" ref="composerTextareaRef" placeholder=""
-                            @keydown.enter.exact.prevent="sendMessage" @keydown.enter.shift.stop
-                            @paste="handleComposerPaste"></textarea>
                         <div class="composer-actions">
                             <div class="send-group">
                                 <button class="send-btn" :disabled="!canSend" @click="sendMessage">
@@ -422,6 +426,21 @@
                 </div>
             </section>
         </main>
+        <div v-if="showListMenu" ref="listMenuRef" class="list-context-menu"
+            :style="{ top: `${listMenuPosition.y}px`, left: `${listMenuPosition.x}px` }" @click.stop>
+            <button class="list-context-item" type="button" @click="pinFriendFromMenu">
+                {{ isPinned(listMenuFriend?.uid) ? '取消置顶' : '置顶' }}
+            </button>
+            <button class="list-context-item" type="button" @click="copyUidFromMenu">复制UID</button>
+            <button class="list-context-item" type="button" @click="toggleUnreadFromMenu">
+                {{ isUnread(listMenuFriend?.uid) ? '标记已读' : '标记未读' }}
+            </button>
+            <button class="list-context-item" type="button" @click="openDetachedChatFromMenu">打开独立聊天窗口</button>
+            <button class="list-context-item" type="button" @click="toggleMuteFromMenu">设置免打扰</button>
+            <button class="list-context-item danger" type="button" @click="removeFromListFromMenu">
+                从消息列表中移除
+            </button>
+        </div>
         <transition name="profile-modal" appear>
             <div v-show="isEditOpen" class="profile-modal">
                 <div class="profile-modal__backdrop" @click="closeEditProfile"></div>
@@ -566,6 +585,15 @@ const searchText = ref('');
 const statusText = ref('在线');
 const activeView = ref('chat');
 const contactsNoticeType = ref('friend');
+const contactGroupOpen = ref({});
+const showListMenu = ref(false);
+const listMenuPosition = ref({ x: 0, y: 0 });
+const listMenuFriend = ref(null);
+const listMenuRef = ref(null);
+const pinnedUids = ref([]);
+const mutedUids = ref([]);
+const unreadUids = ref([]);
+const pendingChatUid = ref(null);
 const incomingRequests = ref([]);
 const outgoingRequests = ref([]);
 const showSendMenu = ref(false);
@@ -578,10 +606,14 @@ const friendProfile = ref(null);
 const friendProfileLoading = ref(false);
 const emojiPickerRef = ref(null);
 const emojiButtonRef = ref(null);
+const emojiPanelStyle = ref({});
+const composerHeight = ref(210);
+const isResizingComposer = ref(false);
+const composerResizeStart = ref({ y: 0, height: 0 });
 const composerTextareaRef = ref(null);
 const avatarInputRef = ref(null);
 const imageInputRef = ref(null);
-const draftImage = ref('');
+const draftImages = ref([]);
 const isCropOpen = ref(false);
 const cropSource = ref('');
 const cropScale = ref(1);
@@ -646,6 +678,30 @@ const handleLogout = () => {
 const MAX_AVATAR_BYTES = 20 * 1024 * 1024;
 const CROP_SIZE = 240;
 const MAX_CHAT_IMAGE_BYTES = 20 * 1024 * 1024;
+const LIST_MENU_WIDTH = 220;
+const LIST_MENU_HEIGHT = 6 * 38;
+const LIST_MENU_MARGIN = 12;
+
+const loadUidList = (key) => {
+    try {
+        const raw = localStorage.getItem(key);
+        const list = JSON.parse(raw || '[]');
+        return Array.isArray(list) ? list.map((item) => Number(item)).filter(Number.isFinite) : [];
+    } catch {
+        return [];
+    }
+};
+
+const saveUidList = (key, list) => {
+    try {
+        localStorage.setItem(key, JSON.stringify(list));
+    } catch {}
+};
+
+const loadFriendPreferences = () => {
+    pinnedUids.value = loadUidList('vp_pinned_uids');
+    mutedUids.value = loadUidList('vp_muted_uids');
+};
 
 const readFileAsDataUrl = (file) =>
     new Promise((resolve, reject) => {
@@ -671,11 +727,37 @@ const triggerImageSelect = () => {
     imageInputRef.value?.click?.();
 };
 
-const clearDraftImage = () => {
-    draftImage.value = '';
+const clearDraftImages = () => {
+    draftImages.value = [];
     if (imageInputRef.value) {
         imageInputRef.value.value = '';
     }
+};
+
+const handleComposerBackspace = (event) => {
+    if (!draftImages.value.length) return;
+    if (draft.value.length > 0) return;
+    draftImages.value = draftImages.value.slice(0, -1);
+    event.preventDefault();
+};
+
+const startComposerResize = (event) => {
+    isResizingComposer.value = true;
+    composerResizeStart.value = { y: event.clientY, height: composerHeight.value };
+    document.body.style.userSelect = 'none';
+};
+
+const handleComposerResizeMove = (event) => {
+    if (!isResizingComposer.value) return;
+    const delta = composerResizeStart.value.y - event.clientY;
+    const next = composerResizeStart.value.height + delta;
+    composerHeight.value = Math.min(360, Math.max(140, next));
+};
+
+const stopComposerResize = () => {
+    if (!isResizingComposer.value) return;
+    isResizingComposer.value = false;
+    document.body.style.userSelect = '';
 };
 
 const clearAvatar = () => {
@@ -683,6 +765,152 @@ const clearAvatar = () => {
     if (avatarInputRef.value) {
         avatarInputRef.value.value = '';
     }
+};
+
+const isPinned = (uid) => pinnedUids.value.includes(uid);
+const isMuted = (uid) => mutedUids.value.includes(uid);
+const isUnread = (uid) => unreadUids.value.includes(uid);
+
+const clampListMenuPosition = (x, y) => {
+    const maxX = Math.max(LIST_MENU_MARGIN, window.innerWidth - LIST_MENU_WIDTH - LIST_MENU_MARGIN);
+    const maxY = Math.max(LIST_MENU_MARGIN, window.innerHeight - LIST_MENU_HEIGHT - LIST_MENU_MARGIN);
+    return {
+        x: Math.min(maxX, Math.max(LIST_MENU_MARGIN, x)),
+        y: Math.min(maxY, Math.max(LIST_MENU_MARGIN, y))
+    };
+};
+
+const openListMenu = (friend, event) => {
+    if (!friend || !event) return;
+    listMenuFriend.value = friend;
+    listMenuPosition.value = clampListMenuPosition(event.clientX, event.clientY);
+    showListMenu.value = true;
+};
+
+const closeListMenu = () => {
+    showListMenu.value = false;
+    listMenuFriend.value = null;
+};
+
+const updatePinned = (uid) => {
+    if (!uid) return;
+    if (pinnedUids.value.includes(uid)) {
+        pinnedUids.value = pinnedUids.value.filter((item) => item !== uid);
+    } else {
+        pinnedUids.value = [uid, ...pinnedUids.value];
+    }
+    saveUidList('vp_pinned_uids', pinnedUids.value);
+};
+
+const updateMuted = (uid) => {
+    if (!uid) return;
+    if (mutedUids.value.includes(uid)) {
+        mutedUids.value = mutedUids.value.filter((item) => item !== uid);
+    } else {
+        mutedUids.value = [...mutedUids.value, uid];
+    }
+    saveUidList('vp_muted_uids', mutedUids.value);
+};
+
+const removePinned = (uid) => {
+    if (!uid || !pinnedUids.value.includes(uid)) return;
+    pinnedUids.value = pinnedUids.value.filter((item) => item !== uid);
+    saveUidList('vp_pinned_uids', pinnedUids.value);
+};
+
+const removeMuted = (uid) => {
+    if (!uid || !mutedUids.value.includes(uid)) return;
+    mutedUids.value = mutedUids.value.filter((item) => item !== uid);
+    saveUidList('vp_muted_uids', mutedUids.value);
+};
+
+const markUnread = (uid) => {
+    if (!uid || unreadUids.value.includes(uid)) return;
+    unreadUids.value = [...unreadUids.value, uid];
+};
+
+const clearUnread = (uid) => {
+    if (!uid) return;
+    if (unreadUids.value.includes(uid)) {
+        unreadUids.value = unreadUids.value.filter((item) => item !== uid);
+    }
+};
+
+const copyText = async (text) => {
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch {}
+    try {
+        const el = document.createElement('textarea');
+        el.value = text;
+        el.style.position = 'fixed';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(el);
+        return ok;
+    } catch {
+        return false;
+    }
+};
+
+const pinFriendFromMenu = () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    updatePinned(uid);
+    closeListMenu();
+};
+
+const copyUidFromMenu = async () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    const ok = await copyText(String(uid));
+    statusText.value = ok ? 'UID 已复制' : '复制失败';
+    closeListMenu();
+};
+
+const toggleUnreadFromMenu = () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    if (unreadUids.value.includes(uid)) {
+        clearUnread(uid);
+    } else {
+        markUnread(uid);
+    }
+    closeListMenu();
+};
+
+const openDetachedChatFromMenu = () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    window.electronAPI?.openChatWindow?.({ uid });
+    closeListMenu();
+};
+
+const toggleMuteFromMenu = () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    updateMuted(uid);
+    closeListMenu();
+};
+
+const removeFromListFromMenu = () => {
+    const uid = listMenuFriend.value?.uid;
+    if (!uid) return;
+    friends.value = friends.value.filter((item) => item.uid !== uid);
+    removePinned(uid);
+    removeMuted(uid);
+    clearUnread(uid);
+    if (activeFriend.value?.uid === uid) {
+        activeFriend.value = null;
+        messages.value = [];
+        localMessages.value = [];
+    }
+    closeListMenu();
 };
 
 const handleAvatarChange = async (event) => {
@@ -724,15 +952,17 @@ const setDraftImage = async (file) => {
     }
     const dataUrl = await readFileAsDataUrl(file);
     if (typeof dataUrl === 'string') {
-        draftImage.value = dataUrl;
+        draftImages.value = [...draftImages.value, dataUrl];
     }
 };
 
 const handleImageSelect = async (event) => {
-    const file = event.target?.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target?.files || []);
+    if (!files.length) return;
     try {
-        await setDraftImage(file);
+        for (const file of files) {
+            await setDraftImage(file);
+        }
     } catch {
         statusText.value = '图片读取失败';
     } finally {
@@ -745,18 +975,21 @@ const handleImageSelect = async (event) => {
 const handleComposerPaste = async (event) => {
     const items = event.clipboardData?.items;
     if (!items) return;
+    let handled = false;
     for (const item of items) {
         if (item.kind === 'file' && item.type?.startsWith('image/')) {
             const file = item.getAsFile();
-            if (!file) return;
-            event.preventDefault();
+            if (!file) continue;
+            handled = true;
             try {
                 await setDraftImage(file);
             } catch {
                 statusText.value = '图片读取失败';
             }
-            return;
         }
+    }
+    if (handled) {
+        event.preventDefault();
     }
 };
 
@@ -1032,11 +1265,16 @@ const handleWsMessage = (payload) => {
         return;
     }
     messageIdSet.add(entry.id);
-    if (entry.senderUid !== auth.value.uid) {
-        playNotifySound();
-        flashWindow();
-    }
     const activeUid = activeFriend.value?.uid;
+    if (entry.senderUid !== auth.value.uid) {
+        if (!mutedUids.value.includes(entry.senderUid)) {
+            playNotifySound();
+            flashWindow();
+        }
+        if (entry.targetType === 'private' && entry.senderUid !== activeUid) {
+            markUnread(entry.senderUid);
+        }
+    }
     if (
         entry.targetType === 'private' &&
         activeUid &&
@@ -1297,8 +1535,83 @@ const currentEmojiList = computed(() => {
     return emojiCatalog[emojiTab.value] || [];
 });
 
-const toggleEmojiPicker = () => {
+const updateEmojiPanelPosition = async () => {
+    await nextTick();
+    const picker = emojiPickerRef.value;
+    const trigger = emojiButtonRef.value;
+    if (!picker || !trigger) return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const pickerRect = picker.getBoundingClientRect();
+    const margin = 10;
+    let left = triggerRect.left + triggerRect.width / 2 - pickerRect.width / 2;
+    let top = triggerRect.top - pickerRect.height - margin;
+    if (top < margin) {
+        top = triggerRect.bottom + margin;
+    }
+    if (left + pickerRect.width > window.innerWidth - margin) {
+        left = window.innerWidth - pickerRect.width - margin;
+    }
+    if (left < margin) {
+        left = margin;
+    }
+    emojiPanelStyle.value = {
+        left: `${Math.round(left)}px`,
+        top: `${Math.round(top)}px`
+    };
+};
+
+const contactGroupDefs = [
+    { key: 'devices', label: '我的设备' },
+    { key: 'bots', label: '机器人' },
+    { key: 'star', label: '特别关心' },
+    { key: 'friends', label: '我的好友' },
+    { key: 'friends_group', label: '朋友' },
+    { key: 'family', label: '家人' },
+    { key: 'classmates', label: '同学' },
+    { key: 'cute', label: '么么哒' }
+];
+
+const isContactGroupOpen = (key) => {
+    if (typeof contactGroupOpen.value[key] === 'boolean') {
+        return contactGroupOpen.value[key];
+    }
+    return key === 'friends' || key === 'star';
+};
+
+const toggleContactGroup = (key) => {
+    contactGroupOpen.value = {
+        ...contactGroupOpen.value,
+        [key]: !isContactGroupOpen(key)
+    };
+};
+
+const groupCountText = (group) => {
+    if (!group) return '0/0';
+    return `${group.online}/${group.total}`;
+};
+
+const contactGroups = computed(() => {
+    const map = new Map(contactGroupDefs.map((def) => [def.key, []]));
+    friends.value.forEach((friend) => {
+        map.get('friends')?.push(friend);
+    });
+    return contactGroupDefs.map((def) => {
+        const items = map.get(def.key) || [];
+        const online = items.filter((item) => item.online === true).length;
+        return {
+            ...def,
+            items,
+            total: items.length,
+            online
+        };
+    });
+});
+
+const toggleEmojiPicker = async () => {
     showEmojiPicker.value = !showEmojiPicker.value;
+    if (showEmojiPicker.value) {
+        await updateEmojiPanelPosition();
+    }
 };
 
 const closeEmojiPicker = () => {
@@ -1333,6 +1646,12 @@ const addEmoji = (emoji) => {
 const handleDocumentClick = (event) => {
     if (showSendMenu.value) {
         showSendMenu.value = false;
+    }
+    if (showListMenu.value) {
+        const menu = listMenuRef.value;
+        if (!menu || !menu.contains(event.target)) {
+            closeListMenu();
+        }
     }
     if (showEmojiPicker.value) {
         const picker = emojiPickerRef.value;
@@ -1421,19 +1740,32 @@ watch(
 
 const filteredFriends = computed(() => {
     const query = searchText.value.trim().toLowerCase();
-    if (!query) return friends.value;
-    return friends.value.filter(
-        (item) =>
-            item.username?.toLowerCase().includes(query) ||
-            String(item.uid).includes(query)
-    );
+    const base = !query
+        ? friends.value
+        : friends.value.filter(
+              (item) =>
+                  item.username?.toLowerCase().includes(query) ||
+                  String(item.uid).includes(query)
+          );
+    if (!pinnedUids.value.length) return base;
+    const pinnedSet = new Set(pinnedUids.value);
+    const pinned = [];
+    const rest = [];
+    base.forEach((item) => {
+        if (pinnedSet.has(item.uid)) {
+            pinned.push(item);
+        } else {
+            rest.push(item);
+        }
+    });
+    return [...pinned, ...rest];
 });
 
 const canSend = computed(() => {
     return (
         !!auth.value.token &&
         !!activeFriend.value?.uid &&
-        (draft.value.trim().length > 0 || !!draftImage.value)
+        (draft.value.trim().length > 0 || draftImages.value.length > 0)
     );
 });
 
@@ -1459,10 +1791,13 @@ const renderMessage = (msg) => {
     return '[未知消息]';
 };
 
-const getMessageImageUrl = (msg) => {
-    if (msg?.type !== 'image') return '';
+const getMessageImageUrls = (msg) => {
+    if (msg?.type !== 'image') return [];
+    if (Array.isArray(msg.data?.urls)) {
+        return msg.data.urls.filter((item) => typeof item === 'string' && item.trim());
+    }
     const url = msg.data?.url || msg.data?.content || '';
-    return typeof url === 'string' ? url : '';
+    return typeof url === 'string' && url.trim() ? [url] : [];
 };
 
 const getMessageImageCaption = (msg) => {
@@ -1480,6 +1815,30 @@ const openImagePreview = (url) => {
     if (!url) return;
     window.electronAPI?.openImagePreview?.(url);
 };
+
+const selectFriendByUid = async (uid) => {
+    if (!uid) return false;
+    const friend = friends.value.find((item) => item.uid === uid);
+    if (!friend) return false;
+    activeView.value = 'chat';
+    await selectFriend(friend);
+    return true;
+};
+
+const handleOpenChatPayload = async (payload) => {
+    const uid = Number(payload?.uid);
+    if (!Number.isFinite(uid)) return;
+    pendingChatUid.value = uid;
+    if (await selectFriendByUid(uid)) {
+        pendingChatUid.value = null;
+    }
+};
+
+if (window.electronAPI?.onOpenChat) {
+    window.electronAPI.onOpenChat((payload) => {
+        handleOpenChatPayload(payload);
+    });
+}
 
 const displayMessages = computed(() => {
     const targetUid = activeFriend.value?.uid;
@@ -1692,6 +2051,22 @@ const loadFriends = async ({ silent } = {}) => {
             } else if (friends.value.length) {
                 selectFriend(friends.value[0]);
             }
+            const knownUids = new Set(next.map((item) => item.uid));
+            if (pinnedUids.value.some((uid) => !knownUids.has(uid))) {
+                pinnedUids.value = pinnedUids.value.filter((uid) => knownUids.has(uid));
+                saveUidList('vp_pinned_uids', pinnedUids.value);
+            }
+            if (mutedUids.value.some((uid) => !knownUids.has(uid))) {
+                mutedUids.value = mutedUids.value.filter((uid) => knownUids.has(uid));
+                saveUidList('vp_muted_uids', mutedUids.value);
+            }
+            if (pendingChatUid.value) {
+                const target = next.find((item) => item.uid === pendingChatUid.value);
+                if (target) {
+                    pendingChatUid.value = null;
+                    selectFriend(target);
+                }
+            }
         }
     } catch (err) {
         if (!silent) {
@@ -1749,9 +2124,17 @@ const loadMessages = async (targetUid, { silent, forceScroll } = {}) => {
 const selectFriend = async (friend) => {
     activeFriend.value = friend;
     setUnreadCount(friend.uid, 0);
+    clearUnread(friend?.uid);
+    closeListMenu();
     await loadMessages(friend.uid, { forceScroll: true });
     await nextTick();
     scheduleScrollToBottom();
+};
+
+const openContactChat = (friend) => {
+    if (!friend) return;
+    activeView.value = 'chat';
+    selectFriend(friend);
 };
 
 const sendChatEntry = async ({ type, data, payload }) => {
@@ -1813,16 +2196,20 @@ const sendMessage = async () => {
     showSendMenu.value = false;
     const content = sanitizeText(draft.value).trim();
     const hasText = content.length > 0;
-    const hasImage = !!draftImage.value;
-    if (!hasText && !hasImage) return;
-    if (hasImage) {
+    const hasImages = draftImages.value.length > 0;
+    if (!hasText && !hasImages) return;
+    if (hasImages) {
+        const payload = {
+            urls: [...draftImages.value],
+            content: hasText ? content : ''
+        };
         const ok = await sendChatEntry({
             type: 'image',
-            data: { url: draftImage.value, content: hasText ? content : '' },
-            payload: { url: draftImage.value, content: hasText ? content : '' }
+            data: payload,
+            payload
         });
         if (ok) {
-            clearDraftImage();
+            clearDraftImages();
             if (hasText) {
                 draft.value = '';
             }
@@ -1898,11 +2285,14 @@ onMounted(async () => {
         isReady.value = true;
     });
     await loadAuth();
+    loadFriendPreferences();
     await loadProfile();
     await loadFriends();
     await loadRequests();
     connectWebSocket();
     window.addEventListener('click', handleDocumentClick);
+    window.addEventListener('mousemove', handleComposerResizeMove);
+    window.addEventListener('mouseup', stopComposerResize);
 });
 
 watch(
@@ -1918,6 +2308,8 @@ watch(
 
 onBeforeUnmount(() => {
     window.removeEventListener('click', handleDocumentClick);
+    window.removeEventListener('mousemove', handleComposerResizeMove);
+    window.removeEventListener('mouseup', stopComposerResize);
     closeWebSocket();
     if (cropDragging.value) {
         stopCropDrag();
@@ -2540,7 +2932,7 @@ select:focus {
     display: grid;
     grid-template-columns: 70px 300px 1fr;
     gap: 0px;
-    padding: 17px 2px 0px;
+    padding: 8px 2px 0px;
     position: relative;
     z-index: 1;
 }
@@ -2640,8 +3032,9 @@ select:focus {
 .contacts-sidebar {
     display: flex;
     flex-direction: column;
-    gap: 18px;
-    height: 100%;
+    gap: 10px;
+    height: 85vh;
+    min-height: 0;
 }
 
 .contacts-search {
@@ -2656,7 +3049,7 @@ select:focus {
     gap: 10px;
     background: rgba(255, 255, 255, 0.6);
     border-radius: 16px;
-    padding: 8px 12px;
+    padding: 0px 12px;
     border: 1px solid rgba(15, 23, 42, 0.12);
     width: 270px;
 }
@@ -2686,7 +3079,7 @@ select:focus {
     border: 1px solid rgba(255, 255, 255, 0.2);
     background: rgba(31, 41, 55, 0.08);
     border-radius: 16px;
-    padding: 10px 12px;
+    padding: 7px 12px;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -2711,7 +3104,7 @@ select:focus {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 10px 12px;
+    padding: 7px 12px;
     border-radius: 14px;
     background: rgba(17, 24, 39, 0.08);
     border: 1px solid rgba(15, 23, 42, 0.1);
@@ -2746,7 +3139,7 @@ select:focus {
     grid-template-columns: 1fr 1fr;
     background: rgba(17, 24, 39, 0.08);
     border-radius: 14px;
-    padding: 4px;
+    padding: 1px;
     gap: 6px;
 }
 
@@ -2766,9 +3159,11 @@ select:focus {
 
 .contacts-list {
     display: grid;
-    gap: 10px;
+    gap: 5px;
     overflow-y: auto;
     padding-right: 4px;
+    flex: 1;
+    min-height: 0;
 }
 
 .contacts-row {
@@ -2787,6 +3182,58 @@ select:focus {
 .contacts-row .count {
     color: #6b7280;
     font-weight: 600;
+}
+
+.contacts-group {
+    display: grid;
+    gap: 8px;
+}
+
+.contacts-group-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.contacts-group-header .chev {
+    transition: transform 0.2s ease;
+    transform: rotate(0deg);
+}
+
+.contacts-group-header .chev.open {
+    transform: rotate(90deg);
+}
+
+.contacts-group-items {
+    display: grid;
+    gap: 6px;
+    padding: 0 6px 6px 6px;
+}
+
+.contacts-friend {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(255, 255, 255, 0.7);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.contacts-friend-name {
+    font-weight: 600;
+}
+
+.contacts-friend-uid {
+    color: #6b7280;
+}
+
+.contacts-empty {
+    font-size: 12px;
+    color: #9ca3af;
+    padding: 6px 10px 10px;
 }
 
 .search {
@@ -2849,6 +3296,11 @@ select:focus {
     box-shadow: 0 12px 20px rgba(72, 147, 214, 0.18);
 }
 
+.list-item.pinned {
+    background: rgba(31, 76, 122, 0.08);
+    border-color: rgba(31, 76, 122, 0.2);
+}
+
 .avatar {
     width: 42px;
     height: 42px;
@@ -2903,6 +3355,64 @@ select:focus {
     align-items: center;
     justify-content: center;
     box-shadow: 0 6px 12px rgba(255, 90, 60, 0.25);
+  
+  }
+.list-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.list-badge.mute {
+    background: rgba(15, 23, 42, 0.08);
+    color: #334155;
+}
+
+.list-unread-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #ef4444;
+}
+
+.list-context-menu {
+    position: fixed;
+    z-index: 3000;
+    width: 180px;
+    padding: 10px;
+    border-radius: 14px;
+    background: transparent;
+    border: 1px solid rgba(72, 147, 214, 0.2);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+    display: grid;
+    gap: 1px;
+    background-color: white;
+}
+
+.list-context-item {
+    border: none;
+    border-radius: 10px;
+    padding: 9px 12px;
+    background: transparent;
+    color: #1e3a8a;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.list-context-item:hover {
+    background: #e5e7eb;
+    color: #111827;
+}
+
+.list-context-item.danger {
+    color: #b91c1c;
+}
+
+.list-context-item.danger:hover {
+    background: #e5e7eb;
+    color: #991b1b;
 }
 
 
@@ -3241,9 +3751,15 @@ select:focus {
 
 .bubble-image {
     max-width: 90%;
-    max-height: 240px;
+    max-height: 24vh;
     border-radius: 12px;
     display: block;
+}
+
+.bubble-image-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .bubble-caption {
@@ -3268,12 +3784,37 @@ select:focus {
 .composer {
     padding: 16px 22px 18px;
     border-top: 1px solid var(--line);
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 12px;
     flex: 0 0 auto;
-    max-height: 210px;
-    overflow-y: auto;
+    max-height: 360px;
+    overflow: hidden;
     overscroll-behavior: contain;
+    position: relative;
+    z-index: 2;
+}
+
+.composer-resize-handle {
+    position: absolute;
+    top: -6px;
+    left: 0;
+    right: 0;
+    height: 12px;
+    cursor: row-resize;
+    z-index: 3;
+}
+
+.composer-resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 5px;
+    width: 44px;
+    height: 3px;
+    transform: translateX(-50%);
+    border-radius: 999px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .composer-toolbar {
@@ -3316,16 +3857,15 @@ select:focus {
 }
 
 .emoji-panel {
-    position: absolute;
-    left: 0;
-    bottom: calc(100% + 10px);
+    position: fixed;
     width: 360px;
     background: linear-gradient(180deg, #f9fcff 0%, #ffffff 100%);
     border-radius: 18px;
     border: 1px solid rgba(15, 23, 42, 0.12);
     box-shadow: 0 18px 38px rgba(15, 23, 42, 0.14);
     padding: 12px;
-    z-index: 6;
+    z-index: 50;
+
 }
 
 .emoji-tabs {
@@ -3389,6 +3929,27 @@ select:focus {
     flex: 1;
 }
 
+.composer-body {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+.composer-input {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    flex-direction: column;
+}
+
+.composer-image-list {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    max-width: 80%;
+}
+
 .composer textarea {
     min-height: 70px;
     resize: none;
@@ -3398,6 +3959,7 @@ select:focus {
     padding: 12px 14px;
     background: rgba(255, 255, 255, 0.9);
     outline: none;
+    flex: 1;
 }
 
 .composer textarea::-webkit-scrollbar {
@@ -3416,9 +3978,8 @@ select:focus {
 
 .composer-image-preview {
     position: relative;
-    width: 160px;
-    height: 160px;
-    margin-bottom: 8px;
+    width: 96px;
+    height: 96px;
     border-radius: 14px;
     overflow: hidden;
     border: 1px solid rgba(15, 23, 42, 0.12);
@@ -3431,21 +3992,6 @@ select:focus {
     object-fit: cover;
     display: block;
 }
-
-.preview-remove {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 24px;
-    height: 24px;
-    border-radius: 999px;
-    border: none;
-    background: rgba(15, 23, 42, 0.7);
-    color: #fff;
-    font-weight: 700;
-    cursor: pointer;
-}
-
 
 .composer-actions {
     display: flex;
