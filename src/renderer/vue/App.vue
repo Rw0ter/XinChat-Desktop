@@ -827,6 +827,7 @@ const presenceOverrides = new Map();
 let messageIdSet = new Set();
 const lastFriendSignature = ref('');
 const lastMessageSignature = ref('');
+const voiceSignalQueue = ref([]);
 
 const handleMin = () => window.electronAPI?.windowMin?.();
 const handleMax = () => window.electronAPI?.windowMax?.();
@@ -1607,6 +1608,18 @@ const connectWebSocket = () => {
             ws.send(JSON.stringify({ type: 'heartbeat' }));
             ws.send(JSON.stringify({ type: 'presence_request' }));
         }
+        if (voiceSignalQueue.value.length) {
+            const queued = [...voiceSignalQueue.value];
+            voiceSignalQueue.value = [];
+            queued.forEach((payload) => {
+                ws.send(
+                    JSON.stringify({
+                        type: 'voice_signal',
+                        data: payload
+                    })
+                );
+            });
+        }
         loadFriends({ silent: true });
         loadRequests({ silent: true });
     };
@@ -2365,7 +2378,10 @@ const fetchVoiceContact = async (uid) => {
 
 const sendVoiceSignalToServer = (payload) => {
     const ws = wsRef.value;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        voiceSignalQueue.value = [...voiceSignalQueue.value, payload];
+        return;
+    }
     ws.send(
         JSON.stringify({
             type: 'voice_signal',
