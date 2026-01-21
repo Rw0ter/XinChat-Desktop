@@ -8,7 +8,10 @@ const hangupBtn = document.getElementById('hangupBtn');
 const closeBtn = document.getElementById('closeBtn');
 const remoteAudio = document.getElementById('remoteAudio');
 
-const ICE_SERVERS = [];
+const ICE_SERVERS = [
+    { urls: 'stun:stun.qq.com:3478' },
+    { urls: 'stun:stun.l.google.com:19302' }
+];
 const CALL_TIMEOUT_MS = 30000;
 let callState = 'idle';
 let mode = 'idle';

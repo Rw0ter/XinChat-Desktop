@@ -10,6 +10,7 @@ backend/data/*.sqlite
 backend/data/*.sqlite3
 backend/data/*.db
 backend/data/*.json
+backend/data/*
 backend/data/uploads/
 backend/data/images/
 backend/data/userfile/
