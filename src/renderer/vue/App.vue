@@ -401,9 +401,9 @@
                         <div class="composer-body">
                             <div class="composer-input">
                                 <div v-if="draftImages.length" class="composer-image-list">
-                                    <div v-for="(url, index) in draftImages" :key="`${url}-${index}`"
+                                    <div v-for="(item, index) in draftImages" :key="item.id || `${item.hash}-${index}`"
                                         class="composer-image-preview">
-                                        <img :src="url" alt="preview" />
+                                        <img :src="item.preview" alt="preview" />
                                     </div>
                                 </div>
                                 <textarea v-model="draft" ref="composerTextareaRef" placeholder=""
@@ -884,6 +884,7 @@ const avatarInputRef = ref(null);
 const imageInputRef = ref(null);
 const fileInputRef = ref(null);
 const draftImages = ref([]);
+const imageUploadCache = new Map();
 const fileDraft = ref(null);
 const isFileModalOpen = ref(false);
 const downloadedFileByUrl = ref({});
@@ -1031,6 +1032,21 @@ const loadImage = (src) =>
         img.onerror = () => reject(new Error('Avatar load failed.'));
         img.src = src;
     });
+
+const computeFileHash = async (file) => {
+    const buffer = await file.arrayBuffer();
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest))
+        .map((value) => value.toString(16).padStart(2, '0'))
+        .join('');
+};
+
+const getImageExtFromDataUrl = (dataUrl) => {
+    const match = /^data:image\/(png|jpe?g|gif|webp);base64,/i.exec(dataUrl || '');
+    if (!match) return '';
+    const ext = match[1].toLowerCase();
+    return ext === 'jpeg' ? 'jpg' : ext;
+};
 
 const triggerAvatarSelect = () => {
     avatarInputRef.value?.click?.();
@@ -1341,9 +1357,23 @@ const setDraftImage = async (file) => {
         statusText.value = '图片大小需小于 20MB';
         return;
     }
-    const dataUrl = await readFileAsDataUrl(file);
+    const hash = await computeFileHash(file);
+    const cached = imageUploadCache.get(hash) || {};
+    let dataUrl = cached.dataUrl;
+    if (!dataUrl) {
+        dataUrl = await readFileAsDataUrl(file);
+    }
     if (typeof dataUrl === 'string') {
-        draftImages.value = [...draftImages.value, dataUrl];
+        imageUploadCache.set(hash, { ...cached, dataUrl });
+        draftImages.value = [
+            ...draftImages.value,
+            {
+                id: `${hash}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                hash,
+                dataUrl,
+                preview: dataUrl
+            }
+        ];
     }
 };
 
@@ -3245,8 +3275,25 @@ const sendMessage = async () => {
     const hasImages = draftImages.value.length > 0;
     if (!hasText && !hasImages) return;
     if (hasImages) {
+        const hashSeen = new Set();
+        const hashMeta = new Map();
+        const urls = draftImages.value.map((item) => {
+            const cached = imageUploadCache.get(item.hash) || {};
+            if (cached.url) {
+                return cached.url;
+            }
+            if (hashSeen.has(item.hash)) {
+                return { hash: item.hash };
+            }
+            hashSeen.add(item.hash);
+            const ext = getImageExtFromDataUrl(item.dataUrl);
+            if (ext) {
+                hashMeta.set(item.hash, ext);
+            }
+            return { hash: item.hash, dataUrl: item.dataUrl };
+        });
         const payload = {
-            urls: [...draftImages.value],
+            urls,
             content: hasText ? content : ''
         };
         const ok = await sendChatEntry({
@@ -3255,6 +3302,11 @@ const sendMessage = async () => {
             payload
         });
         if (ok) {
+            hashMeta.forEach((ext, hash) => {
+                const url = `${API_BASE}/uploads/images/${hash}.${ext}`;
+                const cached = imageUploadCache.get(hash) || {};
+                imageUploadCache.set(hash, { ...cached, url });
+            });
             clearDraftImages();
             if (hasText) {
                 draft.value = '';

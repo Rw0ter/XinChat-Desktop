@@ -27,6 +27,7 @@ const isValidType = (value) => typeof value === 'string' && ALLOWED_TYPES.has(va
 const isValidTargetType = (value) =>
   typeof value === 'string' && ALLOWED_TARGET_TYPES.has(value);
 const DATA_IMAGE_RE = /^data:(image\/(png|jpe?g|gif|webp));base64,/i;
+const IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
 const DATA_URL_RE = /^data:([^;]+);base64,/i;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const FILE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
@@ -228,6 +229,18 @@ const storeImageBuffer = async (buffer, ext) => {
     }
   }
   return { filename, hash };
+};
+
+const findImageUrlByHash = async (hash, baseUrl) => {
+  if (!hash) return '';
+  for (const ext of IMAGE_EXTS) {
+    const filename = `${hash}.${ext}`;
+    const filePath = path.join(IMAGE_DIR, filename);
+    if (await fileExists(filePath)) {
+      return `${baseUrl}/uploads/images/${filename}`;
+    }
+  }
+  return '';
 };
 
 const getSqlModule = async () => {
@@ -491,19 +504,50 @@ router.post('/send', authenticate, async (req, res) => {
     const messageData = { ...data };
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     if (type === 'image') {
-      const normalizeImageUrl = async (value) => {
-        const parsed = parseImageDataUrl(value);
-        if (!parsed) return value;
-        const { filename } = await storeImageBuffer(parsed.buffer, parsed.ext);
-        return `${baseUrl}/uploads/images/${filename}`;
+      const hashUrlMap = new Map();
+      const normalizeImageValue = async (value) => {
+        if (typeof value === 'string') {
+          const parsed = parseImageDataUrl(value);
+          if (!parsed) return value;
+          const stored = await storeImageBuffer(parsed.buffer, parsed.ext);
+          const url = `${baseUrl}/uploads/images/${stored.filename}`;
+          if (stored.hash) {
+            hashUrlMap.set(stored.hash, url);
+          }
+          return url;
+        }
+        if (!value || typeof value !== 'object') return '';
+        const url = typeof value.url === 'string' ? value.url.trim() : '';
+        if (url) return url;
+        const dataUrl =
+          typeof value.dataUrl === 'string' ? value.dataUrl.trim() : '';
+        if (dataUrl) {
+          const parsed = parseImageDataUrl(dataUrl);
+          if (!parsed) return '';
+          const stored = await storeImageBuffer(parsed.buffer, parsed.ext);
+          const storedUrl = `${baseUrl}/uploads/images/${stored.filename}`;
+          if (stored.hash) {
+            hashUrlMap.set(stored.hash, storedUrl);
+          }
+          return storedUrl;
+        }
+        const hash = typeof value.hash === 'string' ? value.hash.trim() : '';
+        if (hash && hashUrlMap.has(hash)) {
+          return hashUrlMap.get(hash);
+        }
+        const foundUrl = await findImageUrlByHash(hash, baseUrl);
+        if (hash && foundUrl) {
+          hashUrlMap.set(hash, foundUrl);
+        }
+        return foundUrl;
       };
       if (Array.isArray(messageData.urls)) {
         const urls = [];
         for (const item of messageData.urls) {
-          if (typeof item !== 'string') continue;
-          const cleaned = item.trim();
-          if (!cleaned) continue;
-          urls.push(await normalizeImageUrl(cleaned));
+          const normalized = await normalizeImageValue(item);
+          if (typeof normalized === 'string' && normalized.trim()) {
+            urls.push(normalized);
+          }
         }
         messageData.urls = urls;
       } else {
@@ -515,7 +559,7 @@ router.post('/send', authenticate, async (req, res) => {
             : '';
         const candidateUrl = rawUrl || fallbackUrl;
         if (candidateUrl) {
-          const normalized = await normalizeImageUrl(candidateUrl);
+          const normalized = await normalizeImageValue(candidateUrl);
           messageData.url = normalized;
           if (!rawUrl && messageData.content === candidateUrl) {
             delete messageData.content;
