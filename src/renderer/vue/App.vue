@@ -112,7 +112,15 @@
                     <div class="search">
                         <div class="serach_input_box">
                             <input v-model="searchText" class="serach_input" type="text" placeholder="搜索联系人或群组" />
-                            <div class="add_friend_icon" @click="openFoundFriend">+</div>
+                            <div class="add-friend-wrap" ref="addFriendRef">
+                                <div class="add_friend_icon" @click.stop="toggleAddMenu">+</div>
+                                <div v-if="showAddMenu" class="add-friend-menu" @click.stop>
+                                    <button class="add-friend-item" type="button"
+                                        @click="handleAddAction('friend')">添加好友</button>
+                                    <button class="add-friend-item" type="button"
+                                        @click="handleAddAction('group')">创建群聊</button>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="search-hint">好友 {{ filteredFriends.length }}</div>
@@ -916,6 +924,8 @@ let messageIdSet = new Set();
 const lastFriendSignature = ref('');
 const lastMessageSignature = ref('');
 const voiceSignalQueue = ref([]);
+const showAddMenu = ref(false);
+const addFriendRef = ref(null);
 
 const handleMin = () => window.electronAPI?.windowMin?.();
 const handleMax = () => window.electronAPI?.windowMax?.();
@@ -2314,6 +2324,21 @@ const addEmoji = (emoji) => {
     recentEmojis.value = next.slice(0, 32);
 };
 
+const toggleAddMenu = () => {
+    showAddMenu.value = !showAddMenu.value;
+};
+
+const handleAddAction = (type) => {
+    showAddMenu.value = false;
+    if (type === 'friend') {
+        openFoundFriend();
+        return;
+    }
+    if (type === 'group') {
+        statusText.value = '创建群聊功能待完善';
+    }
+};
+
 const handleDocumentClick = (event) => {
     if (showSendMenu.value) {
         showSendMenu.value = false;
@@ -2354,6 +2379,12 @@ const handleDocumentClick = (event) => {
         !friendProfileRef.value.contains(event.target)
     ) {
         isFriendProfileVisible.value = false;
+    }
+    if (showAddMenu.value) {
+        const wrap = addFriendRef.value;
+        if (!wrap || !wrap.contains(event.target)) {
+            showAddMenu.value = false;
+        }
     }
 };
 
@@ -6095,6 +6126,42 @@ select:focus {
     align-items: center;
     justify-content: center;
     user-select: none;
+}
+
+.add-friend-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.add-friend-menu {
+    position: absolute;
+    top: 52px;
+    right: 0;
+    min-width: 160px;
+    background: rgba(20, 24, 33, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 8px;
+    display: grid;
+    gap: 6px;
+    z-index: 12;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
+}
+
+.add-friend-item {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: transparent;
+    color: #e5e7eb;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.add-friend-item:hover {
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .share-modal {
