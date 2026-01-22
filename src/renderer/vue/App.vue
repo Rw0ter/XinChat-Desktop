@@ -533,7 +533,8 @@
                                         <span class="contact-action-icon">&#xE72D;</span>
                                         <span class="contact-action-text">分享</span>
                                     </button>
-                                    <button class="contact-action-btn" type="button" title="音视频通话">
+                                    <button class="contact-action-btn" type="button" title="音视频通话"
+                                        @click="startVoiceCallFromContact">
                                         <span class="contact-action-icon">&#xE717;</span>
                                         <span class="contact-action-text">音视频通话</span>
                                     </button>
@@ -3254,6 +3255,18 @@ const enterChatFromContact = async () => {
     showInChatList(target.uid);
     activeView.value = 'chat';
     await selectFriend(target);
+};
+
+const startVoiceCallFromContact = async () => {
+    const target = contactProfileSource.value || selectedContact.value;
+    if (!target?.uid) {
+        statusText.value = '请先选择好友';
+        return;
+    }
+    showInChatList(target.uid);
+    activeView.value = 'chat';
+    await selectFriend(target);
+    await startVoiceCall();
 };
 
 const openSharePanel = () => {
